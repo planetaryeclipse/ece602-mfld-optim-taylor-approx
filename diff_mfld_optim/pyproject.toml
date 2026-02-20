@@ -3,9 +3,10 @@ name = "diff_mfld_optim"
 version = "0.1.0"
 
 [build-system]
-requires = ["setuptools>=61"]
+requires = ["setuptools"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
+# root folder specification to be usable in jupyter notebooks
 where = [".."]
 include = ["diff_mfld_optim*"]
