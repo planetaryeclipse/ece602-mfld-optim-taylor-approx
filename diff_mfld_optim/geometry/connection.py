@@ -1,4 +1,8 @@
 import torch
+
+
+from torch.func import jacrev
+
 from abc import abstractmethod, ABC
 
 
@@ -16,10 +20,10 @@ class Connection(ABC):
         return self._r
 
     @abstractmethod
-    def _eval(self, p):
+    def _eval(self, p) -> torch.Tensor:
         pass
 
-    def __call__(self, *coords_sets):
+    def __call__(self, *coords_sets) -> torch.Tensor:
         # in the case of product manifolds then we merge the coordinates
         p = torch.cat(tuple(coords for coords in coords_sets))
         coords_n = p.shape[0]
@@ -30,3 +34,16 @@ class Connection(ABC):
             )
 
         return self._eval(p)
+
+    def partials(self, p: torch.Tensor, order: int = 1) -> torch.Tensor:
+        if order < 1:
+            raise ValueError(
+                "derivative order of connection coefficient partials must be greater than 0"
+            )
+        
+        fn = jacrev(lambda p: self._eval(p))
+        for _ in range(1, order):
+            fn = jacrev(fn)
+
+        components = fn(p)
+        return components

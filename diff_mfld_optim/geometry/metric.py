@@ -85,7 +85,7 @@ class MetricField:
         )
 
     @property
-    def partials(self) -> torch.Tensor:
+    def partials(self, order: int = 1) -> torch.Tensor:
         # gets a function that generates the partials of the metric tensor as
         # a function for every point on the manifold
         return PartialsWrapper(self)
