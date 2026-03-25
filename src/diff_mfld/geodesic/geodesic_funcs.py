@@ -1,14 +1,12 @@
-from enum import Enum
-
 import torch
 import numpy as np
-from torch.autograd.function import Function
 
 import warnings
 
+from enum import Enum
 from scipy.integrate import solve_ivp, solve_bvp
 
-from diff_mfld_optim.geodesic.approx_geod_so import (
+from src.diff_mfld.geodesic.approx_geod_so import (
     approx_exp_map_o1,
     approx_exp_map_o2,
     approx_exp_map_o3,
@@ -18,10 +16,11 @@ from diff_mfld_optim.geodesic.approx_geod_so import (
     ApproxExpMapWrapper,
     ApproxLogMapWrapper
 )
-from diff_mfld_optim.geometry.metric import MetricField, LeviCivitaConnection
-from diff_mfld_optim.geometry.connection import Connection
+from src.diff_mfld.geometry.metric import MetricField, LeviCivitaConnection
+from src.diff_mfld.geometry.connection import Connection
 
 LOG_MAP_INITIAL_MESH_SIZE = 10
+
 
 # exact methods
 
@@ -47,18 +46,19 @@ def ivp_exp_map(p: torch.Tensor, v: torch.Tensor, conn: Connection) -> torch.Ten
     y_f = result.y[:, -1]
     return torch.tensor(y_f, dtype=p.dtype)
 
+
 def _geod_bc_fn(ya, yb, p: np.ndarray, q: np.ndarray):
     pos_a, vel_a = ya
     pos_b, vel_b = yb
 
-    return np.concat(((p-pos_a)+(q-pos_b)))
-    
+    return np.concat(((p - pos_a) + (q - pos_b)))
+
 
 def bvp_log_map(p: torch.Tensor, q: torch.Tensor, conn: Connection) -> torch.Tensor:
     p_numpy, q_numpy = p.detach().numpy(), q.detach().numpy()
 
     t_initial_mesh = np.linspace(0.0, 1.0, LOG_MAP_INITIAL_MESH_SIZE)
-    v_guess_mesh = (q - p) * t_initial_mesh # guess uses euclidean estimate 
+    v_guess_mesh = (q - p) * t_initial_mesh  # guess uses euclidean estimate
 
     result = solve_bvp(
         lambda t, y: _geod_ivp_fn(t, y, p.shape[0], conn),
@@ -67,7 +67,7 @@ def bvp_log_map(p: torch.Tensor, q: torch.Tensor, conn: Connection) -> torch.Ten
         v_guess_mesh,
     )
     if result.success:
-        v = result.y[:,0]
+        v = result.y[:, 0]
     else:
         warnings.warn(f"failed to find solution to bvp log map, falling back to eulidean estimate")
         v = q_numpy - p_numpy
@@ -169,25 +169,24 @@ class LogMethod(Enum):
 # usable maps
 
 
-def exp_map(p, v, conn, method=ExpMethod.APPROX_O2):
-    return method(p, v, conn)
-
-
-def log_map(p, q, conn, method=LogMethod.APPROX_O2):
-    return method(p, q, conn)
-
-
-def dist_map(
-    p, q, metric: MetricField, conn: Connection = None, log_method=LogMethod.APPROX_O2
-):
-    # if connection not defined then use the levi-civita connection from the metric
-    if conn is None:
-        conn = metric.christoffels()
-
-    # convenient method to compute this value
-    v = log_method(p, q, conn)
-    return metric(p)(v, v)
-
+# def exp_map(p, v, conn, method=ExpMethod.APPROX_O2):
+#     return method(p, v, conn)
+#
+#
+# def log_map(p, q, conn, method=LogMethod.APPROX_O2):
+#     return method(p, q, conn)
+#
+#
+# def dist_map(
+#         p, q, metric: MetricField, conn: Connection = None, log_method=LogMethod.APPROX_O2
+# ):
+#     # if connection not defined then use the levi-civita connection from the metric
+#     if conn is None:
+#         conn = metric.christoffels()
+#
+#     # convenient method to compute this value
+#     v = log_method(p, q, conn)
+#     return metric(p)(v, v)
 
 # class DistSquaredMap(Function):
 #     # by defining the distance map as a torch function then we can evaluate the

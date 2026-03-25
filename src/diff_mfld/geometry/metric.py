@@ -1,3 +1,5 @@
+from __future__ import annotations  # remove in 3.14
+
 import torch
 import inspect
 import itertools
@@ -5,9 +7,10 @@ import itertools
 from torch.func import jacrev
 from torch.autograd.functional import jacobian
 
-from diff_mfld_optim.geometry.connection import Connection
+from src.diff_mfld.geometry.connection import Connection
 
 
+# utility function
 def _coords(p):
     return [p[i] for i in range(len(p))]
 
@@ -21,39 +24,15 @@ class LeviCivitaConnection(Connection):
         return self.fn(p)
 
 
-def _eval_christoffels(n, g_fn, g_inv_fn, p) -> torch.tensor:
-    # evaluate all the partials of the metric elements
-    conn_coeffs = torch.zeros((n, n, n))
-    g_inv = g_inv_fn(p)
+def _eval_christoffels(n, metric_fn, p) -> torch.tensor:
+    g = metric_fn(p)
+    g_partials = jacobian(lambda p: metric_fn(p), p, create_graph=True)  # adds index at end due to partials
 
-    metric_partials = jacrev(g_fn)(p)
-    for k, i, j in itertools.product(range(n), range(n), range(n)):
-        coeff = 0.0
-        for m in range(n):
-            coeff += (
-                0.5
-                * g_inv[k, m]
-                * (
-                    metric_partials[m, i, j]
-                    + metric_partials[m, j, i]
-                    - metric_partials[i, j, m]
-                )
-            )
-        conn_coeffs[k, i, j] = coeff
+    # computes the connection coefficients of the Levi-Civita connection using the metric
+    conn_coeffs = 0.5 * torch.tensordot(g.inverse(), g_partials + torch.transpose(g_partials, 1, 2) - torch.transpose(
+        torch.transpose(g_partials, 1, 2), 0, 1), dims=([1], [0]))
+
     return conn_coeffs
-
-
-class PartialsWrapper:
-    def __init__(self, field: MetricField):
-        self._field = field
-
-    def __call__(self, p) -> torch.Tensor:
-        # computes the partials of the metric tensor at point p with index of
-        # the basis of differentiation specified as the last dimension
-        partials = jacrev(lambda p: self._field.fn(*_coords(p)))(
-            p
-        )  # index of diff in first dim
-        return torch.transpose(torch.transpose(partials, 0, 2), 0, 1)
 
 
 # technically a (0,2)-tensor but defined with additional operations to allow
@@ -85,38 +64,20 @@ class MetricField:
         )
 
     @property
-    def partials(self, order: int = 1) -> torch.Tensor:
+    def partials(self, order: int = 1) -> PartialsWrapper:
         # gets a function that generates the partials of the metric tensor as
         # a function for every point on the manifold
         return PartialsWrapper(self)
 
-    def __call__(self, p):
+    def __call__(self, p: torch.Tensor) -> MetricView:
         metric = Metric(self, self.fn(*_coords(p)))
         return MetricView(metric, False)
 
 
-# used internally
-class Metric:
-    def __init__(self, field, matrix):
-        self._field = field  # the metric field itself
-
-        self._matrix = matrix  # evaluation of field (PyTorch tensor for autograd)
-        self._inv_matrix = None  # lazily compute this
-
-    def _create_inv(self):
-        if self._inv_matrix is None:
-            self._inv_matrix = torch.inverse(self._matrix)
-
-    def _sharp(self, u):
-        self._create_inv()
-        return self._inv_matrix @ u
-
-    def _flat(self, u):
-        return self._matrix @ u
-
-
 # not caring here but when writing the rust library at a future point in time
 # then we will want to have mutable and immutable views
+
+# noinspection PyProtectedMember
 class MetricView:
     def __init__(self, metric, inv):
         self._metric: Metric = metric
@@ -139,11 +100,7 @@ class MetricView:
         return self._metric._matrix if not self.inv else self._metric._inv_matrix
 
     def __getitem__(self, slice):
-        (
-            self._metric._matrix[slice]
-            if not self._inv
-            else self._metric._inv_matrix[slice]
-        )
+        return self._metric._matrix[slice] if not self._inv else self._metric._inv_matrix[slice]
 
     def __call__(self, u, v):
         # either takes inner product between tangent vector or covectors
@@ -158,6 +115,39 @@ class MetricView:
     def flat(self, u):
         # lowers tangent vector and returns isomorphic cotangent covector
         return self._metric._flat(u)
+
+
+class PartialsWrapper:
+    def __init__(self, field: MetricField):
+        self._field = field
+
+    def __call__(self, p) -> torch.Tensor:
+        # computes the partials of the metric tensor at point p with index of
+        # the basis of differentiation specified as the last dimension
+        partials = jacrev(lambda p: self._field.fn(*_coords(p)))(
+            p
+        )  # index of diff in first dim
+        return torch.transpose(torch.transpose(partials, 0, 2), 0, 1)
+
+
+# used internally
+class Metric:
+    def __init__(self, field, matrix):
+        self._field = field  # the metric field itself
+
+        self._matrix = matrix  # evaluation of field (PyTorch tensor for autograd)
+        self._inv_matrix = None  # lazily compute this
+
+    def _create_inv(self):
+        if self._inv_matrix is None:
+            self._inv_matrix = torch.inverse(self._matrix)
+
+    def _sharp(self, u):
+        self._create_inv()
+        return self._inv_matrix @ u
+
+    def _flat(self, u):
+        return self._matrix @ u
 
 
 class RnMetricField(MetricField):

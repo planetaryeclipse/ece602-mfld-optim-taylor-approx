@@ -8,10 +8,11 @@ import inspect
 from enum import Enum
 from scipy.optimize import root
 
-from diff_mfld_optim.geometry.metric import RnMetricField
-from diff_mfld_optim.geometry.connection import Connection
+from src.diff_mfld.geometry.metric import RnMetricField
+from src.diff_mfld.geometry.connection import Connection
 
-from typing import Tuple, List, Callable, Optional
+from typing import List, Callable
+
 
 # wrapper class which matches the expected signature and then computes all required connection coefficients (and
 # partials if applicable) before passing it to the approximate methods below
@@ -29,7 +30,7 @@ def _count_conn_coeff_args(map):
 
 
 def _compute_conn_coeff_args(
-    count: int, p: torch.Tensor, conn: Connection
+        count: int, p: torch.Tensor, conn: Connection
 ) -> List[np.ndarray]:
     conn_coeffs_with_partials = []
     if count > 0:
@@ -46,7 +47,7 @@ class ApproxExpMapWrapper:
         self._coeffs_count = _count_conn_coeff_args(exp_map)
 
     def __call__(
-        self, p: torch.Tensor, v: torch.Tensor, conn: Connection
+            self, p: torch.Tensor, v: torch.Tensor, conn: Connection
     ) -> torch.Tensor:
         conn_coeffs_with_partials = _compute_conn_coeff_args(
             self._coeffs_count, p, conn
@@ -63,7 +64,7 @@ class ApproxLogMapWrapper:
     def __init__(self, log_map: Callable[..., np.ndarray]):
         self._log_map = log_map
         self._coeffs_count = _count_conn_coeff_args(log_map)
-    
+
     def __call__(
             self, p: torch.Tensor, q: torch.Tensor, conn: Connection
     ) -> torch.Tensor:
@@ -90,7 +91,7 @@ def approx_exp_map_o1(p: np.ndarray, v: np.ndarray) -> np.ndarray:
 
 
 def approx_exp_map_o2(
-    p: np.ndarray, v: np.ndarray, conn_coeffs: np.ndarray
+        p: np.ndarray, v: np.ndarray, conn_coeffs: np.ndarray
 ) -> np.ndarray:
     f0_val = f0(v)
     f1_val = f1(v, conn_coeffs)
@@ -98,10 +99,10 @@ def approx_exp_map_o2(
 
 
 def approx_exp_map_o3(
-    p: np.ndarray,
-    v: np.ndarray,
-    conn_coeffs: np.ndarray,
-    conn_coeffs_partials: np.ndarray,
+        p: np.ndarray,
+        v: np.ndarray,
+        conn_coeffs: np.ndarray,
+        conn_coeffs_partials: np.ndarray,
 ) -> np.ndarray:
     f0_val = f0(v)
     f1_val = f1(v, conn_coeffs)
@@ -128,7 +129,7 @@ def _approx_log_map(f_fn, fprime_fn, p, q, order):
 
 
 def approx_log_map_o2(
-    p: np.ndarray, q: np.ndarray, conn_coeffs: np.ndarray
+        p: np.ndarray, q: np.ndarray, conn_coeffs: np.ndarray
 ) -> np.ndarray:
     f_fn = lambda v: -q + (p + f0(v) + f1(v, conn_coeffs))
     fprime_fn = lambda v: f0_diff_wrt_y(v) + f1_diff_wrt_y(v, conn_coeffs)
@@ -137,18 +138,18 @@ def approx_log_map_o2(
 
 
 def approx_log_map_o3(
-    p: np.ndarray,
-    q: np.ndarray,
-    conn_coeffs: np.ndarray,
-    conn_coeffs_partials: np.ndarray,
+        p: np.ndarray,
+        q: np.ndarray,
+        conn_coeffs: np.ndarray,
+        conn_coeffs_partials: np.ndarray,
 ) -> np.ndarray:
     f_fn = lambda v: -q + (
-        p + f0(v) + f1(v, conn_coeffs) + f2(v, conn_coeffs, conn_coeffs_partials)
+            p + f0(v) + f1(v, conn_coeffs) + f2(v, conn_coeffs, conn_coeffs_partials)
     )
     fprime_fn = (
         lambda v: f0_diff_wrt_y(v)
-        + f1_diff_wrt_y(v, conn_coeffs)
-        + f2_diff_wrt_y(v, conn_coeffs, conn_coeffs_partials)
+                  + f1_diff_wrt_y(v, conn_coeffs)
+                  + f2_diff_wrt_y(v, conn_coeffs, conn_coeffs_partials)
     )
 
     return _approx_log_map(f_fn, fprime_fn, p, q)
@@ -175,7 +176,7 @@ def f1_diff_wrt_y(y: np.ndarray, conn_coeffs: np.ndarray) -> np.ndarray:
 
 
 def f2(
-    y: np.ndarray, conn_coeffs: np.ndarray, conn_coeffs_partials: np.ndarray
+        y: np.ndarray, conn_coeffs: np.ndarray, conn_coeffs_partials: np.ndarray
 ) -> np.ndarray:
     result = np.zeros_like(y)
 
@@ -212,7 +213,7 @@ def f2(
 
 
 def f2_diff_wrt_y(
-    y: np.ndarray, conn_coeffs: np.ndarray, conn_coeffs_partials: np.ndarray
+        y: np.ndarray, conn_coeffs: np.ndarray, conn_coeffs_partials: np.ndarray
 ) -> np.ndarray:
     result = np.zeros_like(y)
 
@@ -236,7 +237,6 @@ def f2_diff_wrt_y(
         ([2], [0]),
     )
     return result
-
 
 # older approximate code from research paper (now unused)
 
