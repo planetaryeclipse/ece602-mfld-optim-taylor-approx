@@ -3,14 +3,14 @@ from time import time
 
 from torch.func import jacrev
 
-from diff_mfld_optim.geometry.metric import RnMetricField
-from diff_mfld_optim.optim.subsolver import (
+from diff_mfld.geometry.metric import RnMetricField
+from diff_mfld.optim.subsolver import (
     SolverCfg,
     riem_grad_descent,
     SubsolverMethod,
 )
-from diff_mfld_optim.optim.constrained import ConstrainedSolverCfg, ralm
-from diff_mfld_optim.mfld_util import MfldCfg, dist_squared_map
+from diff_mfld.optim.constrained import ConstrainedSolverCfg, ralm
+from diff_mfld.mfld_util import MfldCfg, dist_squared_map
 
 
 def test_riem_grad_descent():
