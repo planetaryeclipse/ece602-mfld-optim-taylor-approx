@@ -132,7 +132,7 @@ def approx_log_map_o2(
         p: np.ndarray, q: np.ndarray, conn_coeffs: np.ndarray
 ) -> np.ndarray:
     f_fn = lambda v: -q + (p + f0(v) + f1(v, conn_coeffs))
-    fprime_fn = lambda v: f0_diff_wrt_y(v) + f1_diff_wrt_y(v, conn_coeffs)
+    fprime_fn = lambda v: f0_jacob(v) + f1_jacob(v, conn_coeffs)
 
     return _approx_log_map(f_fn, fprime_fn, p, q)
 
@@ -141,15 +141,15 @@ def approx_log_map_o3(
         p: np.ndarray,
         q: np.ndarray,
         conn_coeffs: np.ndarray,
-        conn_coeffs_partials: np.ndarray,
+        conn_coeffs_fo_partials: np.ndarray,
 ) -> np.ndarray:
     f_fn = lambda v: -q + (
-            p + f0(v) + f1(v, conn_coeffs) + f2(v, conn_coeffs, conn_coeffs_partials)
+            p + f0(v) + f1(v, conn_coeffs) + f2(v, conn_coeffs, conn_coeffs_fo_partials)
     )
     fprime_fn = (
-        lambda v: f0_diff_wrt_y(v)
-                  + f1_diff_wrt_y(v, conn_coeffs)
-                  + f2_diff_wrt_y(v, conn_coeffs, conn_coeffs_partials)
+        lambda v: f0_jacob(v)
+                  + f1_jacob(v, conn_coeffs)
+                  + f2_jacob(v, conn_coeffs, conn_coeffs_fo_partials)
     )
 
     return _approx_log_map(f_fn, fprime_fn, p, q)
@@ -162,80 +162,49 @@ def f0(y: np.ndarray) -> np.ndarray:
     return y
 
 
-def f0_diff_wrt_y(y: np.ndarray) -> np.ndarray:
+def f0_jacob(y: np.ndarray) -> np.ndarray:
     n = y.shape[0]
     return np.eye(n)
 
 
 def f1(y: np.ndarray, conn_coeffs: np.ndarray) -> np.ndarray:
-    return -torch.tensordot(torch.tensordot(conn_coeffs, y, ([2], [0])), y, ([1], [0]))
+    return np.einsum("kab,a,b->k", conn_coeffs, y, y)
 
 
-def f1_diff_wrt_y(y: np.ndarray, conn_coeffs: np.ndarray) -> np.ndarray:
-    return -torch.tensordot(conn_coeffs, y, ([1], [0]))
+def f1_jacob(y: np.ndarray, conn_coeffs: np.ndarray) -> np.ndarray:
+    result = -np.einsum("kab,b->ka", conn_coeffs, y)
+    result += -np.einsum("kab,a->kb", conn_coeffs, y)
 
-
-def f2(
-        y: np.ndarray, conn_coeffs: np.ndarray, conn_coeffs_partials: np.ndarray
-) -> np.ndarray:
-    result = np.zeros_like(y)
-
-    result += -torch.tensordot(
-        torch.tensordot(
-            torch.tensordot(conn_coeffs_partials, y, ([3], [0])), y, ([2], [0])
-        ),
-        y,
-        ([1], [0]),
-    )
-    result += torch.tensordot(
-        torch.tensordot(
-            torch.tensordot(
-                torch.tensordot(conn_coeffs, y, ([1], [0])), conn_coeffs, ([1], [0])
-            ),
-            y,
-            ([2], [0]),
-        ),
-        y,
-        ([1], [0]),
-    )
-    result += torch.tensordot(
-        torch.tensordot(
-            torch.tensordot(
-                torch.tensordot(conn_coeffs, conn_coeffs, ([1], [0])), y, ([3], [0])
-            ),
-            y,
-            ([2], [0]),
-        ),
-        y,
-        ([1], [0]),
-    )
     return result
 
 
-def f2_diff_wrt_y(
+def f2(
+        y: np.ndarray, conn_coeffs: np.ndarray, conn_coeffs_fo_partials: np.ndarray
+) -> np.ndarray:
+    result = -np.einsum("kabc,a,b,c->k", conn_coeffs_fo_partials, y, y, y)
+    result += np.einsum("kab,a,bcd,c,d->k", conn_coeffs, y, conn_coeffs, y, y)
+    result += np.einsum("kab,acd,c,d,b", conn_coeffs, conn_coeffs, y, y, y)
+
+    return result
+
+def f2_jacob(
         y: np.ndarray, conn_coeffs: np.ndarray, conn_coeffs_partials: np.ndarray
 ) -> np.ndarray:
-    result = np.zeros_like(y)
+    # first term
+    result = -np.einsum("kabc,b,c->ka", conn_coeffs_partials, y, y)
+    result += -np.einsum("kabc,a,c->kb", conn_coeffs_partials, y, y)
+    result += -np.einsum("kabc,a,b->kc", conn_coeffs_partials, y, y)
 
-    result += -torch.tensordot(
-        torch.tensordot(conn_coeffs_partials, y, ([3], [0])), y, ([2], [0])
-    )
-    result += (
-        torch.tensordot(
-            torch.tensordot(
-                torch.tensordot(conn_coeffs, y, ([1], [0])), conn_coeffs, ([1], [0])
-            ),
-            y,
-            ([2], [0]),
-        ),
-    )
-    result += torch.tensordot(
-        torch.tensordot(
-            torch.tensordot(conn_coeffs, conn_coeffs, ([1], [0])), y, ([3], [0])
-        ),
-        y,
-        ([2], [0]),
-    )
+    # second term
+    result += np.einsum("kab,bcd,c,d->ka", conn_coeffs, conn_coeffs, y, y)
+    result += np.einsum("kab,a,bcd,d->kc", conn_coeffs, y, conn_coeffs, y)
+    result += np.einsum("kab,a,bcd,c->kd", conn_coeffs, y, conn_coeffs, y)
+
+    # third term
+    result += np.einsum("kab,acd,c,d->kb", conn_coeffs, conn_coeffs, y, y)
+    result += np.einsum("kab,acd,b,d->kc", conn_coeffs, conn_coeffs, y, y)
+    result += np.einsum("kab,acd,b,c->kd", conn_coeffs, conn_coeffs, y, y)
+
     return result
 
 # older approximate code from research paper (now unused)
