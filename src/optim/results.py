@@ -1,3 +1,5 @@
+from enum import Enum, auto
+
 import numpy as np
 import torch
 
@@ -17,6 +19,10 @@ class ConstrSolverCfg(ABC):
 
 # resulting output classes
 
+class SubsolverCriterion(Enum):
+    DISTANCE = auto()
+    NORM = auto()
+
 @dataclass
 class SubsolverHistory:
     p_hist: torch.Tensor
@@ -29,7 +35,6 @@ class SubsolverResult:
     p: torch.Tensor
     iters: int
     history: SubsolverHistory
-
 
 class CustomSubsolverResult(ABC):
     @property

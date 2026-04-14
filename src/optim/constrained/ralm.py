@@ -49,6 +49,8 @@ class RalmHistory:
     g_mults_hist: torch.Tensor
     h_mults_hist: torch.Tensor
 
+    subsolver_iters_hist: List[int]
+
 
 @dataclass
 class RalmResult(CustomConstrSolverResult):
@@ -183,6 +185,7 @@ def ralm(
     penalty_hist = []
     g_mults_hist = []
     h_mults_hist = []
+    subsolver_iters_hist = []
 
     penalty = cfg.penalty_0
     acc_tol = cfg.acc_tol_0
@@ -191,11 +194,22 @@ def ralm(
 
     # sets up the augmented lagrangian function which will be minimized by the selected subsolver optimization method
     # prior to the update of the other parameters and the lagrangian multipliers
-
     augm_lagr = AugmentedLagrangian(f, gs, hs, list(*g_mults), list(*h_mults), penalty)
+
+    successfully_converged = False
+    idx_counter = 0
+
     for idx in range(cfg.max_iters):
-        subsolver_cfg.min_step = acc_tol  # updates the expected accuracy inside the subsolver
-        subsolver_result = cfg.subsolver_method(augm_lagr, p, mfld, cfg.subsolver_cfg, *args)
+        # updates the expected accuracy inside the subsolver
+        subsolver_cfg.criterion_eps = acc_tol  # updates the expected accuracy inside the subsolver
+
+        # updates the subproblem
+        augm_lagr.g_mults = g_mults
+        augm_lagr.h_mults = h_mults
+        augm_lagr.penalty = penalty
+
+        # attempts to solve the subproblem
+        subsolver_result = cfg.subsolver_method(augm_lagr, p, mfld, subsolver_cfg, *args)
         if not subsolver_result.success:
             return RalmResult(
                 success=False,
@@ -210,30 +224,20 @@ def ralm(
                     penalty_hist=torch.tensor(penalty_hist),
                     g_mults_hist=torch.tensor(g_mults_hist),
                     h_mults_hist=torch.tensor(h_mults_hist),
+                    subsolver_iters_hist=subsolver_iters_hist,
                 )
             )
 
         # assume that the subsolver was successful after this point
         next_p = subsolver_result.p
+
+        # check convergence criterion
         if mfld.dist(p, next_p) < cfg.min_step and acc_tol < cfg.acc_tol_min:
-            return RalmResult(
-                success=True,
-                p=next_p,
-                iters=idx + 1,
-                history=RalmHistory(
-                    p_hist=torch.tensor(p_hist),
-                    f_hist=torch.tensor(f_hist),
-                    gs_hist=torch.tensor(gs_hist),
-                    hs_hist=torch.tensor(hs_hist),
-                    acc_hist=torch.tensor(acc_hist),
-                    penalty_hist=torch.tensor(penalty_hist),
-                    g_mults_hist=torch.tensor(g_mults_hist),
-                    h_mults_hist=torch.tensor(h_mults_hist),
-                )
-            )
+            successfully_converged = True
+
+        # convergence has not been achieved, proceed with updates
 
         # if convergence has not been achieved then we update the multipliers, etc.
-
         current_g_vals = [g.value(p, mfld, *args) for g in gs]
         current_h_vals = [h.value(p, mfld, *args) for h in hs]
 
@@ -287,12 +291,17 @@ def ralm(
         penalty_hist.append(penalty)
         g_mults_hist.append(g_mults)
         h_mults_hist.append(h_mults)
+        subsolver_iters_hist.append(subsolver_result.iters)
 
-    # ran out of iterations without converging
+        # breaks after updating history
+        idx_counter += 1
+        if successfully_converged:
+            break
+
     return RalmResult(
-        success=False,
+        success=successfully_converged,
         p=p,
-        iters=cfg.max_iters,
+        iters=idx_counter,
         history=RalmHistory(
             p_hist=torch.tensor(p_hist),
             f_hist=torch.tensor(f_hist),
@@ -302,5 +311,6 @@ def ralm(
             penalty_hist=torch.tensor(penalty_hist),
             g_mults_hist=torch.tensor(g_mults_hist),
             h_mults_hist=torch.tensor(h_mults_hist),
+            subsolver_iters_hist=subsolver_iters_hist,
         )
     )

@@ -1,10 +1,12 @@
+from typing import Optional
+
 import torch
 
 from dataclasses import dataclass
 
 from diff_mfld.geometry.funcs import MfldFunc, FuncArgs
 from diff_mfld.mfld import ComputeMfld
-from optim.results import SubsolverCfg
+from optim.results import SubsolverCfg, SubsolverCriterion
 
 from src.optim.results import CustomSubsolverResult, SubsolverHistory, SubsolverResult
 
@@ -12,7 +14,8 @@ from src.optim.results import CustomSubsolverResult, SubsolverHistory, Subsolver
 @dataclass
 class RiemGradDescentCfg(SubsolverCfg):
     damp: float = 0.6
-    min_step: float = 0.01
+    criterion_mode: SubsolverCriterion = SubsolverCriterion.DISTANCE
+    criterion_eps: float = 0.01
     max_iters: int = 1000
 
 
@@ -60,16 +63,33 @@ def riem_grad_descent(f: MfldFunc, p0: torch.Tensor, mfld: ComputeMfld, cfg: Rie
         f_hist.append(f.value(p, mfld, *args).item())
 
         if p_prev is not None:
-            dist = mfld.dist(p_prev, p)
-            if dist < cfg.min_step:
-                return RiemGradDescentResult(
-                    success=True,
-                    p=p,
-                    iters=idx + 1,
-                    history=RiemGradDescentHistory(
-                        p_hist=torch.tensor(p_hist),
-                        f_hist=torch.tensor(f_hist),
-                    ))
+            if cfg.criterion_mode == SubsolverCriterion.DISTANCE:
+                dist = mfld.dist(p_prev, p)
+                if dist < cfg.criterion_eps:
+                    return RiemGradDescentResult(
+                        success=True,
+                        p=p,
+                        iters=idx + 1,
+                        history=RiemGradDescentHistory(
+                            p_hist=torch.tensor(p_hist),
+                            f_hist=torch.tensor(f_hist),
+                        ))
+            elif cfg.criterion_mode == SubsolverCriterion.NORM:
+                # computes the norm of the gradient of the function
+                f_diff = f.diff(p, mfld, *args)
+                metric = mfld.mfld.metric(p)
+                f_grad = metric.sharp(f_diff)
+                f_grad_norm = metric(f_grad, f_grad)
+
+                if f_grad_norm <= cfg.criterion_eps:
+                    return RiemGradDescentResult(
+                        success=True,
+                        p=p,
+                        iters=idx + 1,
+                        history=RiemGradDescentHistory(
+                            p_hist=torch.tensor(p_hist),
+                            f_hist=torch.tensor(f_hist),
+                        ))
 
         p_prev = p.clone()  # otherwise if we modify p then p_prev is changed
     return RiemGradDescentResult(

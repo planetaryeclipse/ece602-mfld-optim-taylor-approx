@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 
 from diff_mfld.geometry.funcs import MfldFunc, FuncArgs
 from diff_mfld.mfld import ComputeMfld
-from optim.results import SubsolverCfg, CustomSubsolverResult, SubsolverResult, SubsolverHistory
+from optim.results import SubsolverCfg, CustomSubsolverResult, SubsolverResult, SubsolverHistory, SubsolverCriterion
 
 REGION_RADIUS_EPS = 1E-6  # used to check equivalency of norm of eta updates
 SUBPROBLEM_REL_ACC_EPS = 1E-6  # used to prevent nan in evaluating convergence criterion of eta updates
@@ -22,7 +22,8 @@ class RiemTrustRegionCfg(SubsolverCfg):
     min_quality_for_step: float  # in [0, 1/4)
     symm_lin_oper: Callable[[torch.Tensor], torch.Tensor] = field(default=lambda p: torch.eye(p.shape[0]))
     damp: float = 0.6
-    min_step: float = 0.01
+    criterion_mode: SubsolverCriterion
+    criterion_eps: float = 0.01
     max_iters: int = 1000
     subproblem_max_iters = 10
     subproblem_rel_acc: float = 0.03  # 3 percent
@@ -165,20 +166,40 @@ def riem_trust_region(
         radius_hist.append(radius)
 
         if p_prev is not None:
-            dist = mfld.dist(p_prev, p)
-            if dist < cfg.min_step:
-
-                return RiemTrustRegionResult(
-                    success=True,
-                    p=p,
-                    iters=idx + 1,
-                    history=RiemTrustRegionHistory(
-                        p_hist=torch.tensor(p_hist),
-                        f_hist=torch.tensor(f_hist),
-                        quality_hist=torch.tensor(quality_hist),
-                        radius_hist=torch.tensor(radius_hist),
+            if cfg.criterion_mode == SubsolverCriterion.DISTANCE:
+                dist = mfld.dist(p_prev, p)
+                if dist <= cfg.criterion_eps
+                    return RiemTrustRegionResult(
+                        success=True,
+                        p=p,
+                        iters=idx + 1,
+                        history=RiemTrustRegionHistory(
+                            p_hist=torch.tensor(p_hist),
+                            f_hist=torch.tensor(f_hist),
+                            quality_hist=torch.tensor(quality_hist),
+                            radius_hist=torch.tensor(radius_hist),
+                        )
                     )
-                )
+            elif cfg.criterion_mode == SubsolverCriterion.NORM:
+                # computes the norm of the gradient of the function
+                f_diff = f.diff(p, mfld, *args)
+                metric = mfld.mfld.metric(p)
+                f_grad = metric.sharp(f_diff)
+                f_grad_norm = metric(f_grad, f_grad)
+
+                if f_grad_norm <= cfg.criterion_eps:
+                    return RiemTrustRegionResult(
+                        success=True,
+                        p=p,
+                        iters=idx + 1,
+                        history=RiemTrustRegionHistory(
+                            p_hist=torch.tensor(p_hist),
+                            f_hist=torch.tensor(f_hist),
+                            quality_hist=torch.tensor(quality_hist),
+                            radius_hist=torch.tensor(radius_hist),
+                        )
+                    )
+
 
         p_prev = p.clone()
     return RiemTrustRegionResult(
