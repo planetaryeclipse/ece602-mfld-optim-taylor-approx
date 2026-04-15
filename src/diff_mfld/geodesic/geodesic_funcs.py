@@ -5,8 +5,9 @@ import warnings
 
 from enum import Enum
 from scipy.integrate import solve_ivp, solve_bvp
+from scipy.optimize import root_scalar, root
 
-from src.diff_mfld.geodesic.approx_geod_so import (
+from src.diff_mfld.geodesic.approx_geod import (
     approx_exp_map_o1,
     approx_exp_map_o2,
     approx_exp_map_o3,
@@ -21,55 +22,88 @@ from src.diff_mfld.geometry.connection import Connection
 
 LOG_MAP_INITIAL_MESH_SIZE = 10
 
+LOG_MAP_BVP_MAX_NODES = 500
+LOG_MAP_BVP_TOL = 1E-3
+
 
 # exact methods
 
 
-def _geod_ivp_fn(t, y: np.ndarray, n: int, conn: Connection):
-    p, v = y[:n], y[n:]
-    conn_coeffs = conn(p).detach().numpy()
+def _geod_ivp_fn_batched(t, y: np.ndarray, n: int, conn: Connection):
+    # nodes = y.shape[1]
+    # print(f"Num nodes: {nodes}")
+
+    p, v = y[:n, :], y[n:, :]  # [n, samples], [n, samples]
+    conn_coeffs = conn(torch.tensor(p)).detach().numpy()  # [n, n, n, samples]
 
     dot_p = v
-    dot_v = -np.tensordot(np.tensordot(conn_coeffs, v, ([2], [0])), v, ([1], [0]))
+    dot_v = -np.einsum("kijb,ib,jb->kb", conn_coeffs, v, v)
 
-    return np.concat((dot_p, dot_v))
+    return np.concat((dot_p, dot_v), axis=0)
 
 
-def ivp_exp_map(p: torch.Tensor, v: torch.Tensor, conn: Connection) -> torch.Tensor:
+def _geod_ivp_fn(t, y: np.ndarray, n: int, conn: Connection):
+    p, v = y[:n], y[n:]  # [n], [n]
+    conn_coeffs = conn(torch.tensor(p)).detach().numpy()  # [n, n, n]
+
+    dot_p = v
+    dot_v = -np.einsum("kij,i,j->k", conn_coeffs, v, v)
+
+    return np.concat((dot_p, dot_v), axis=0)
+
+
+def ivp_exp_map(p: torch.Tensor, v: torch.Tensor, conn: Connection, alpha: float = 1.0) -> torch.Tensor:
+    n = p.shape[0]
     result = solve_ivp(
         _geod_ivp_fn,
-        [0.0, 1.0],
+        [0.0, alpha],
         np.concat((p.detach().numpy(), v.detach().numpy())),
-        args=(p.shape[0], conn)
+        method="Radau",  # implicit scheme to improve stability
+        args=(n, conn),
     )
 
     y_f = result.y[:, -1]
-    return torch.tensor(y_f, dtype=p.dtype)
+    p_f = y_f[:n]
+    return torch.tensor(p_f, dtype=p.dtype)
 
 
-def _geod_bc_fn(ya, yb, p: np.ndarray, q: np.ndarray):
-    pos_a, vel_a = ya
-    pos_b, vel_b = yb
+def _geod_bc_fn(ya, yb, p: np.ndarray, q: np.ndarray, n: int):
+    pos_a, vel_a = ya[:n], ya[n:]
+    pos_b, vel_b = yb[:n], yb[n:]
 
-    return np.concat(((p - pos_a) + (q - pos_b)))
+    # print(f'pos_a: {pos_a}\t\t\t\tvel_a: {vel_a}')
+    # print(f'pos_b: {pos_b}\t\t\t\tvel_b: {vel_b}')
+
+    return np.hstack((
+        pos_a - p,
+        pos_b - q
+    ))
 
 
-def bvp_log_map(p: torch.Tensor, q: torch.Tensor, conn: Connection) -> torch.Tensor:
+def bvp_log_map(p: torch.Tensor, q: torch.Tensor, conn: Connection, alpha: float = 1.0) -> torch.Tensor:
     p_numpy, q_numpy = p.detach().numpy(), q.detach().numpy()
 
-    t_initial_mesh = np.linspace(0.0, 1.0, LOG_MAP_INITIAL_MESH_SIZE)
-    v_guess_mesh = (q - p) * t_initial_mesh  # guess uses euclidean estimate
+    t_initial_mesh = np.linspace(0.0, alpha, LOG_MAP_INITIAL_MESH_SIZE)
 
+    # constructs Euclidean guess
+    p_guess_mesh = np.linspace(p_numpy, q_numpy, LOG_MAP_INITIAL_MESH_SIZE).T
+    v_guess_mesh = np.tile(np.reshape(q - p, (len(q), 1)), (1, LOG_MAP_INITIAL_MESH_SIZE))
+    y_guess_mesh = np.concat((p_guess_mesh, v_guess_mesh), axis=0)
+
+    n = p.shape[0]
     result = solve_bvp(
-        lambda t, y: _geod_ivp_fn(t, y, p.shape[0], conn),
-        lambda ya, yb: _geod_bc_fn(ya, yb, p_numpy, q_numpy),
+        lambda t, y: _geod_ivp_fn_batched(t, y, n, conn),
+        lambda ya, yb: _geod_bc_fn(ya, yb, p_numpy, q_numpy, n),
         t_initial_mesh,
-        v_guess_mesh,
+        y_guess_mesh,
+        tol=LOG_MAP_BVP_TOL,
+        max_nodes=LOG_MAP_BVP_MAX_NODES
     )
+
     if result.success:
-        v = result.y[:, 0]
+        v = result.y[n:, 0]
     else:
-        warnings.warn(f"failed to find solution to bvp log map, falling back to eulidean estimate")
+        print(f"failed to find solution to bvp log map, falling back to eulidean estimate")
         v = q_numpy - p_numpy
     return torch.tensor(v, dtype=p.dtype)
 
@@ -152,19 +186,19 @@ class ExpMethod(Enum):
     APPROX_O2 = ApproxExpMapWrapper(approx_exp_map_o2)
     APPROX_O3 = ApproxExpMapWrapper(approx_exp_map_o3)
 
-    def __call__(self, p: torch.tensor, v: torch.tensor, conn: Connection):
-        return self.value(p, v, conn)
+    def __call__(self, p: torch.Tensor, v: torch.Tensor, conn: Connection, alpha: float = 1.0):
+        return self.value(p, v, conn, alpha)
 
 
 class LogMethod(Enum):
     BVP = bvp_log_map
+    # SHOOTING = shooting_log_map
     APPROX_O1 = ApproxLogMapWrapper(approx_log_map_o1)
     APPROX_O2 = ApproxLogMapWrapper(approx_log_map_o2)
     APPROX_O3 = ApproxLogMapWrapper(approx_log_map_o3)
 
-    def __call__(self, p: torch.tensor, q: torch.tensor, conn: Connection):
-        return self.value(p, q, conn)
-
+    def __call__(self, p: torch.Tensor, q: torch.Tensor, conn: Connection, alpha: float = 1.0):
+        return self.value(p, q, conn, alpha)
 
 # usable maps
 

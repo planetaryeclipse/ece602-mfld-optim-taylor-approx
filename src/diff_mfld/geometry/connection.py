@@ -1,6 +1,5 @@
 import torch
 
-
 from torch.func import jacrev
 
 from abc import abstractmethod, ABC
@@ -25,7 +24,7 @@ class Connection(ABC):
 
     def __call__(self, *coords_sets) -> torch.Tensor:
         # in the case of product manifolds then we merge the coordinates
-        p = torch.cat(tuple(coords for coords in coords_sets))
+        p = torch.cat(tuple(coords for coords in coords_sets), dim=0)
         coords_n = p.shape[0]
         if coords_n != self.n:
             raise ValueError(
@@ -33,17 +32,37 @@ class Connection(ABC):
                 f"underlying manifold: n={self.n}, coords_n={coords_n}"
             )
 
-        return self._eval(p)
+        # if multiple positions have been provided to this call (in the respective columns) then
+        # they will be segmented and calls made to the internal _eval individually
+        if len(p.shape) == 1:
+            return self._eval(p)
+        elif len(p.shape) == 2:
+            num_samples = p.shape[1]
+            batched_conn_coeffs = torch.zeros((self.r, self.r, self.n, num_samples))
+            for idx in range(num_samples):
+                p_sample = p[:, idx].squeeze()
+                conn_coeffs = self._eval(p_sample)
+                batched_conn_coeffs[:, :, :, idx] = conn_coeffs
+            return batched_conn_coeffs
+        else:
+            raise ValueError(f"incorrect shape for p {p.shape}")
 
     def partials(self, p: torch.Tensor, order: int = 1) -> torch.Tensor:
         if order < 1:
             raise ValueError(
                 "derivative order of connection coefficient partials must be greater than 0"
             )
-        
-        fn = jacrev(lambda p: self._eval(p))
-        for _ in range(1, order):
+
+        # print(f"order: {order}")
+
+        fn = self._eval
+        for _ in range(order):
             fn = jacrev(fn)
 
-        components = fn(p)
-        return components
+        partials_val = fn(p)
+
+        # print(f"partials_val: {partials_val.shape}")
+
+        # print(f"partials: order = {order}, value = {partials_val}")
+
+        return partials_val

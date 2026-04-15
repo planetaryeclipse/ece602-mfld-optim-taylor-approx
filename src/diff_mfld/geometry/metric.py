@@ -2,7 +2,6 @@ from __future__ import annotations  # remove in 3.14
 
 import torch
 import inspect
-import itertools
 
 from torch.func import jacrev
 from torch.autograd.functional import jacobian
@@ -24,14 +23,28 @@ class LeviCivitaConnection(Connection):
         return self.fn(p)
 
 
-def _eval_christoffels(n, metric_fn, p) -> torch.tensor:
+def _eval_christoffels(n, metric_fn, p: torch.Tensor) -> torch.Tensor:
+    # p.requires_grad_(True)
+    # print(f"p: {p}")
+
     g = metric_fn(p)
-    g_partials = jacobian(lambda p: metric_fn(p), p, create_graph=True)  # adds index at end due to partials
+    g_inv = g.inverse()
+    g_partials = jacrev(lambda p_jacob: metric_fn(p_jacob))(p)
+
+    # print(f"g_partials = {g_partials[:, :, 0]}")
+    # assert False
+
+    # g_partials = jacobian(lambda p_jacob: metric_fn(p_jacob), p, create_graph=True)  # adds index at end due to partials
 
     # computes the connection coefficients of the Levi-Civita connection using the metric
-    conn_coeffs = 0.5 * torch.tensordot(g.inverse(), g_partials + torch.transpose(g_partials, 1, 2) - torch.transpose(
-        torch.transpose(g_partials, 1, 2), 0, 1), dims=([1], [0]))
-
+    # print(f"g: {g}")
+    # print(f"g_inv: {g_inv}")
+    # print(f"g_partials: {g_partials}")
+    conn_coeffs = 0.5 * (
+            torch.einsum("lr,rjk->ljk", g_inv, g_partials)
+            + torch.einsum("lr,rkj->ljk", g_inv, g_partials)
+            - torch.einsum("lr,jkr->ljk", g_inv, g_partials)
+    )
     return conn_coeffs
 
 
@@ -54,12 +67,12 @@ class MetricField:
         # differentiated to take the jacobian when evaluating the various
         # christoffel symbols as part of the levi-civita connection
         g_mat_fn = lambda p: self.fn(*_coords(p))
-        g_inv_mat_fn = lambda p: torch.inverse(g_mat_fn(p))
+        # g_inv_mat_fn = lambda p: torch.inverse(g_mat_fn(p))
 
         return LeviCivitaConnection(
             self.n,
             # torch.compile(
-            lambda p: _eval_christoffels(self.n, g_mat_fn, g_inv_mat_fn, p),
+            lambda p: _eval_christoffels(self.n, g_mat_fn, p),
             # ),
         )
 
@@ -124,9 +137,7 @@ class PartialsWrapper:
     def __call__(self, p) -> torch.Tensor:
         # computes the partials of the metric tensor at point p with index of
         # the basis of differentiation specified as the last dimension
-        partials = jacrev(lambda p: self._field.fn(*_coords(p)))(
-            p
-        )  # index of diff in first dim
+        partials = jacrev(lambda p_jac: self._field.fn(*_coords(p_jac)))(p)  # index of diff in first dim
         return torch.transpose(torch.transpose(partials, 0, 2), 0, 1)
 
 

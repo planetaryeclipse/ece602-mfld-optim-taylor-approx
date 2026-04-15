@@ -1,14 +1,10 @@
-import itertools
 import numpy as np
 import torch
 
 import warnings
 import inspect
 
-from enum import Enum
 from scipy.optimize import root
-
-from src.diff_mfld.geometry.metric import RnMetricField
 from src.diff_mfld.geometry.connection import Connection
 
 from typing import List, Callable
@@ -23,8 +19,10 @@ from typing import List, Callable
 
 
 def _count_conn_coeff_args(map):
+    # measures the number of parameters after the alpha parameter (correspond to the connection
+    # coefficients and any remaining partials after that)
     sig = inspect.signature(map)
-    coeffs_count = len(sig.parameters) - 2
+    coeffs_count = len(sig.parameters) - 3
 
     return coeffs_count
 
@@ -47,7 +45,7 @@ class ApproxExpMapWrapper:
         self._coeffs_count = _count_conn_coeff_args(exp_map)
 
     def __call__(
-            self, p: torch.Tensor, v: torch.Tensor, conn: Connection
+            self, p: torch.Tensor, v: torch.Tensor, conn: Connection, alpha: float
     ) -> torch.Tensor:
         conn_coeffs_with_partials = _compute_conn_coeff_args(
             self._coeffs_count, p, conn
@@ -56,7 +54,7 @@ class ApproxExpMapWrapper:
         p_numpy = p.detach().numpy()
         v_numpy = v.detach().numpy()
 
-        q_numpy = self._exp_map(p_numpy, v_numpy, *conn_coeffs_with_partials)
+        q_numpy = self._exp_map(p_numpy, v_numpy, alpha, *conn_coeffs_with_partials)
         return torch.tensor(q_numpy, dtype=p.dtype)
 
 
@@ -66,7 +64,7 @@ class ApproxLogMapWrapper:
         self._coeffs_count = _count_conn_coeff_args(log_map)
 
     def __call__(
-            self, p: torch.Tensor, q: torch.Tensor, conn: Connection
+            self, p: torch.Tensor, q: torch.Tensor, conn: Connection, alpha: float
     ) -> torch.Tensor:
         conn_coeffs_with_partials = _compute_conn_coeff_args(
             self._coeffs_count, p, conn)
@@ -74,7 +72,9 @@ class ApproxLogMapWrapper:
         p_numpy = p.detach().numpy()
         q_numpy = q.detach().numpy()
 
-        v_numpy = self._log_map(p_numpy, q_numpy, *conn_coeffs_with_partials)
+        print(f"len: {len(conn_coeffs_with_partials)}")
+
+        v_numpy = self._log_map(p_numpy, q_numpy, alpha, *conn_coeffs_with_partials)
         return torch.tensor(v_numpy, dtype=p.dtype)
 
 
@@ -85,74 +85,71 @@ class ApproxLogMapWrapper:
 # expansions in the functions below
 
 
-def approx_exp_map_o1(p: np.ndarray, v: np.ndarray) -> np.ndarray:
-    f0_val = f0(v)
-    return p + v
+def approx_exp_map_o1(p: np.ndarray, v: np.ndarray, alpha: float) -> np.ndarray:
+    return p + f0(v) * alpha
 
 
 def approx_exp_map_o2(
-        p: np.ndarray, v: np.ndarray, conn_coeffs: np.ndarray
+        p: np.ndarray, v: np.ndarray, alpha: float, conn_coeffs: np.ndarray
 ) -> np.ndarray:
-    f0_val = f0(v)
-    f1_val = f1(v, conn_coeffs)
-    return p + f0_val + f1_val
+    return p + f0(v) * alpha + 1. / 2. * f1(v, conn_coeffs) * alpha**2
 
 
 def approx_exp_map_o3(
         p: np.ndarray,
         v: np.ndarray,
+        alpha: float,
         conn_coeffs: np.ndarray,
         conn_coeffs_partials: np.ndarray,
 ) -> np.ndarray:
-    f0_val = f0(v)
-    f1_val = f1(v, conn_coeffs)
-    f2_val = f2(v, conn_coeffs, conn_coeffs_partials)
-    return p + f0_val + f1_val + f2_val
+    return p + f0(v) * alpha + 1. / 2. * f1(v, conn_coeffs) * alpha**2 + 1. / 6. * f2(v, conn_coeffs, conn_coeffs_partials) * alpha**3
 
 
-def approx_log_map_o1(p: np.ndarray, q: np.ndarray) -> np.ndarray:
-    return q - p  # no need to use solver here
-
-
-def _approx_log_map(f_fn, fprime_fn, p, q, order):
-    v_guess = approx_log_map_o1(p, q)
+def _solve_approx_log_map(f_fn, fprime_fn, p, q, order, alpha):
+    v_guess = approx_log_map_o1(p, q, alpha)  # uses initial Euclidean gues
     result = root(f_fn, v_guess, jac=fprime_fn)
 
+    n = p.shape[0]
     if result.success:
-        v = result.y[:, 0]
+        v = result.x[:n]
     else:
-        warnings.warn(
+        print(
             f"failed to find solution to order {order} approx log map, falling back to order 1 estimate"
         )
         v = v_guess
     return v.astype(dtype=p.dtype)  # always returns float64 for some reason
 
 
-def approx_log_map_o2(
-        p: np.ndarray, q: np.ndarray, conn_coeffs: np.ndarray
-) -> np.ndarray:
-    f_fn = lambda v: -q + (p + f0(v) + f1(v, conn_coeffs))
-    fprime_fn = lambda v: f0_jacob(v) + f1_jacob(v, conn_coeffs)
+def approx_log_map_o1(p: np.ndarray, q: np.ndarray, alpha: float) -> np.ndarray:
+    return (q - p) / alpha  # no need to use solver here
 
-    return _approx_log_map(f_fn, fprime_fn, p, q)
+
+def approx_log_map_o2(
+        p: np.ndarray, q: np.ndarray, alpha: float, conn_coeffs: np.ndarray
+) -> np.ndarray:
+    f_fn = lambda v: -q + (p + f0(v) * alpha + 1. / 2. * f1(v, conn_coeffs) * alpha**2)
+    fprime_fn = lambda v: f0_jacob(v) * alpha + 1. / 2. * f1_jacob(v, conn_coeffs) * alpha**2
+
+    return _solve_approx_log_map(f_fn, fprime_fn, p, q, 2, alpha)
 
 
 def approx_log_map_o3(
         p: np.ndarray,
         q: np.ndarray,
+        alpha: float,
         conn_coeffs: np.ndarray,
         conn_coeffs_fo_partials: np.ndarray,
 ) -> np.ndarray:
     f_fn = lambda v: -q + (
-            p + f0(v) + f1(v, conn_coeffs) + f2(v, conn_coeffs, conn_coeffs_fo_partials)
+            p + f0(v) * alpha + 1. / 2. * f1(v, conn_coeffs) * alpha**2 + 1. / 6. * f2(v, conn_coeffs, conn_coeffs_fo_partials) * alpha**3
     )
     fprime_fn = (
-        lambda v: f0_jacob(v)
-                  + f1_jacob(v, conn_coeffs)
-                  + f2_jacob(v, conn_coeffs, conn_coeffs_fo_partials)
+        lambda v: f0_jacob(v) * alpha
+                  + 1. / 2. * f1_jacob(v, conn_coeffs) * alpha**2
+                  + 1. / 6. * f2_jacob(v, conn_coeffs, conn_coeffs_fo_partials) * alpha**3
     )
 
-    return _approx_log_map(f_fn, fprime_fn, p, q)
+    return _solve_approx_log_map(f_fn, fprime_fn, p, q, 3, alpha)
 
 
 # implements the higher order component calculations
@@ -168,7 +165,9 @@ def f0_jacob(y: np.ndarray) -> np.ndarray:
 
 
 def f1(y: np.ndarray, conn_coeffs: np.ndarray) -> np.ndarray:
-    return np.einsum("kab,a,b->k", conn_coeffs, y, y)
+    result = -np.einsum("kab,a,b->k", conn_coeffs, y, y)
+
+    return result
 
 
 def f1_jacob(y: np.ndarray, conn_coeffs: np.ndarray) -> np.ndarray:
@@ -183,9 +182,10 @@ def f2(
 ) -> np.ndarray:
     result = -np.einsum("kabc,a,b,c->k", conn_coeffs_fo_partials, y, y, y)
     result += np.einsum("kab,a,bcd,c,d->k", conn_coeffs, y, conn_coeffs, y, y)
-    result += np.einsum("kab,acd,c,d,b", conn_coeffs, conn_coeffs, y, y, y)
+    result += np.einsum("kab,acd,c,d,b->k", conn_coeffs, conn_coeffs, y, y, y)
 
     return result
+
 
 def f2_jacob(
         y: np.ndarray, conn_coeffs: np.ndarray, conn_coeffs_partials: np.ndarray
