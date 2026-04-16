@@ -1,4 +1,4 @@
-from typing import Callable
+from typing import Callable, Tuple
 
 import torch
 import numpy as np
@@ -12,22 +12,22 @@ from diff_mfld.mfld import ComputeMfld
 from optim.results import SubsolverCfg, CustomSubsolverResult, SubsolverResult, SubsolverHistory, SubsolverCriterion
 
 REGION_RADIUS_EPS = 1E-6  # used to check equivalency of norm of eta updates
-SUBPROBLEM_REL_ACC_EPS = 1E-6  # used to prevent nan in evaluating convergence criterion of eta updates
+
 
 @dataclass
 class RiemTrustRegionCfg(SubsolverCfg):
-    radius_max: float
-    radius_growth: float  # in (0, 1)
-    radius_start: float # in (0, radius_max)
-    min_quality_for_step: float  # in [0, 1/4)
+    radius_max: float = 5.0
+    radius_start: float = 0.25  # in (0, radius_max)
+    min_quality_for_step: float = 0.15  # in [0, 1/4)
     symm_lin_oper: Callable[[torch.Tensor], torch.Tensor] = field(default=lambda p: torch.eye(p.shape[0]))
-    damp: float = 0.6
-    criterion_mode: SubsolverCriterion
-    criterion_eps: float = 0.01
+    # damp: float = 0.1  # damping on the trust region causes convergence failure
+    criterion_mode: SubsolverCriterion = SubsolverCriterion.NORM
+    criterion_eps: float = 1e-4
     max_iters: int = 1000
-    subproblem_max_iters = 10
-    subproblem_rel_acc: float = 0.03  # 3 percent
+    subproblem_max_iters = 100
+    subproblem_rel_acc: float = 0.01  # 3 percent
     subproblem_damp: float = 0.6
+
 
 @dataclass
 class RiemTrustRegionHistory:
@@ -35,6 +35,7 @@ class RiemTrustRegionHistory:
     f_hist: torch.Tensor
     quality_hist: torch.Tensor
     radius_hist: torch.Tensor
+
 
 @dataclass
 class RiemTrustRegionResult(CustomSubsolverResult):
@@ -55,45 +56,65 @@ class RiemTrustRegionResult(CustomSubsolverResult):
             )
         )
 
-def tr_subproblem_m(eta: torch.Tensor, p_k: torch.Tensor, f_k: torch.Tensor, grad_f_k: torch.Tensor, h_k: torch.Tensor, g_k: torch.Tensor) -> float:
-    eta, p_k, f_k, grad_f_k, h_k, g_k = (eta.detach().numpy(), p_k.detach().numpy(), f_k.detach().numpy(), grad_f_k.detach().numpy(), h_k.detach().numpy(), g_k.detach().numpy())
+
+def tr_subproblem_m(eta: torch.Tensor, p_k: torch.Tensor, f_k: torch.Tensor, grad_f_k: torch.Tensor, h_k: torch.Tensor,
+                    g_k: torch.Tensor) -> float:
+    eta, p_k, f_k, grad_f_k, h_k, g_k = (eta.detach().numpy(), p_k.detach().numpy(), f_k.detach().numpy(),
+                                         grad_f_k.detach().numpy(), h_k.detach().numpy(), g_k.detach().numpy())
     m_k = f_k + grad_f_k @ g_k @ eta + 0.5 * (h_k @ eta) @ g_k @ eta
     return m_k.item()
+
 
 def _subproblem_grad(eta: np.ndarray, grad_f: np.ndarray, h: np.ndarray, g: np.ndarray) -> np.ndarray:
     return g.T @ grad_f + h.T @ g @ eta
 
-def _ellipsoid_cond_f(lam, d, y, b) -> float:
-    result = 0.0
-    for i in range(len(d)):
-        result += d[i] * y[i]**2.0 / (1.0 + 2.0 * lam * d[i])**2.0
-    result -= b
 
-    return result
+# ellipse projection courtesy of chatgpt
 
-def _ellipsoid_cond_fprime(lam, d, y) -> float:
-    result = 0.0
-    for i in range(len(d)):
-        result += d[i]**2.0 * y[i]**2.0 / (1.0 + 2.0 * lam * d[i])**3.0
-    result *= -4.0
+def _eval_g(lam: float, x: np.ndarray, p: np.ndarray, b: float):
+    a = np.eye(len(x)) + 2.0 * lam * p
+    xlam = np.linalg.solve(a, x)
+    return xlam @ p @ xlam - b
 
-    return result
+
+def _bracket_root(x: np.ndarray, p: np.ndarray, b: float) -> Tuple[float, float]:
+    g0 = _eval_g(0.0, x, p, b)
+    if g0 <= 0:
+        return 0.0, 0.0
+
+    lo = 0.0
+    hi = 1.0
+
+    while _eval_g(hi, x, p, b) > 0:
+        hi *= 2.0
+
+    return lo, hi
+
 
 def _project_onto_ellipsoid(x: np.ndarray, p: np.ndarray, b: float) -> np.ndarray:
-    # if the point is already in the ellipsoid then we don't need to perform a projection
     if x @ p @ x <= b:
         return x
-    else:
-        d, q = np.linalg.eigh(p)
-        y = q @ x
 
-        result = root_scalar(f=lambda soln_lam: _ellipsoid_cond_f(soln_lam, d, y, b), x0=1.0, fprime=lambda soln_lam: _ellipsoid_cond_fprime(soln_lam, d, y))
-        lam = result.root
+    lo, hi = _bracket_root(x, p, b)
 
-        proj_x = np.linalg.inv(np.eye(len(d)) + 2.0*lam*p) @ x
-        return proj_x
+    sol = root_scalar(
+        _eval_g,
+        args=(x, p, b),
+        bracket=(lo, hi),
+        method="brentq",
+        xtol=1e-10,
+        rtol=1e-10,
+        maxiter=50
+    )
 
-def solve_tr_subproblem_m(p_k: torch.Tensor, grad_f_k: torch.Tensor, h_k: torch.Tensor, g_k: torch.Tensor, radius_k: float, max_iters: int, rel_acc: float, damp: float) -> torch.Tensor:
+    lam = sol.root
+
+    a = np.eye(len(x)) + 2.0 * lam * p
+    return np.linalg.solve(a, x)
+
+
+def solve_tr_subproblem_m(p_k: torch.Tensor, grad_f_k: torch.Tensor, h_k: torch.Tensor, g_k: torch.Tensor,
+                          radius_k: float, max_iters: int, abs_acc: float, damp: float) -> torch.Tensor:
     # implement proximal mapping to solve subproblem
 
     # NOTE: converts to numpy to speed up computation (and not worry about torch computational graph)
@@ -102,15 +123,17 @@ def solve_tr_subproblem_m(p_k: torch.Tensor, grad_f_k: torch.Tensor, h_k: torch.
     h_k: np.ndarray = h_k.detach().numpy()
     g_k: np.ndarray = g_k.detach().numpy()
 
-    eta = np.zeros(p_k)
+    eta = np.zeros_like(p_k)
     for idx in range(max_iters):
-        # implements proximal updates
+        # implements a proximal update scheme (given linear problem) using a projection onto the ellipse constraint
         m_grad = _subproblem_grad(eta, grad_f_k, h_k, g_k)
-        eta_upd = _project_onto_ellipsoid(eta - damp * m_grad, g_k, radius_k**2.0)
+        forw_step = eta - damp * m_grad
+        back_step = _project_onto_ellipsoid(forw_step, g_k, radius_k ** 2)
+        eta_upd = back_step
 
-        # exits early if the relative accuracy of any component is below the required threshold
-        rel_err = np.abs(eta_upd - eta) / (np.abs(eta) + SUBPROBLEM_REL_ACC_EPS * np.ones_like(eta))
-        if np.max(rel_err) <= rel_acc:
+        # exits early if the accuracy of any component is below the required threshold
+        abs_err = np.abs(eta_upd - eta)
+        if np.max(abs_err) <= abs_acc:
             eta = eta_upd
             break
 
@@ -119,13 +142,13 @@ def solve_tr_subproblem_m(p_k: torch.Tensor, grad_f_k: torch.Tensor, h_k: torch.
     # only need approximate solution so no guarantees that all the iterations completed successfully
     return torch.tensor(eta)
 
-def riem_trust_region(
-    f: MfldFunc,
-    p0: torch.Tensor,
-    mfld: ComputeMfld,
-    cfg: RiemTrustRegionCfg,
-    *args: *FuncArgs) -> RiemTrustRegionResult:
 
+def riem_trust_region(
+        f: MfldFunc,
+        p0: torch.Tensor,
+        mfld: ComputeMfld,
+        cfg: RiemTrustRegionCfg,
+        *args: *FuncArgs) -> RiemTrustRegionResult:
     p_prev = None  # track this value to utilize convergence criterion
     p: torch.Tensor = p0.detach().clone()  # cloned so can be modified without changing p_prev
 
@@ -141,15 +164,26 @@ def riem_trust_region(
 
         f_curr: torch.Tensor = f.value(p, mfld, *args)
         f_diff_curr: torch.Tensor = f.diff(p, mfld, *args)
-        f_grad_curr: torch.Tensor = metric.sharp(f_diff_curr) # gets gradient using the metric
+        f_grad_curr: torch.Tensor = metric.sharp(f_diff_curr)  # gets gradient using the metric
         h_curr: torch.Tensor = cfg.symm_lin_oper(p)
         g_curr: torch.Tensor = metric.mat  # metric matrix
 
-        # approximately solve the trust-region subproblem
-        curr_eta = solve_tr_subproblem_m(p, f_grad_curr, h_curr, g_curr, radius, cfg.subproblem_max_iters, cfg.subproblem_rel_acc, cfg.subproblem_damp)
-        p_possible_upd = mfld.exp(p, -cfg.damp * curr_eta)  # predicted next point under retraction
+        print()
 
-        quality_curr = (f.value(p, mfld, *args) - f.value(p_possible_upd, mfld, *args)) / (tr_subproblem_m(torch.zeros_like(curr_eta), p, f_curr, f_grad_curr, h_curr, g_curr) - tr_subproblem_m(curr_eta, p, f_curr, f_grad_curr, h_curr, g_curr))
+        # approximately solve the trust-region subproblem
+        curr_eta = solve_tr_subproblem_m(p, f_grad_curr, h_curr, g_curr, radius, cfg.subproblem_max_iters,
+                                         cfg.subproblem_rel_acc, cfg.subproblem_damp)
+        print(f"curr_eta: {curr_eta}")
+
+        p_possible_upd = mfld.exp(p, curr_eta)  # predicted next point under retraction
+        print(f"p_possible_upd: {p_possible_upd}")
+
+        quality_curr = (f.value(p, mfld, *args) - f.value(p_possible_upd, mfld, *args)) / (
+                tr_subproblem_m(torch.zeros_like(curr_eta), p, f_curr, f_grad_curr, h_curr,
+                                g_curr) - tr_subproblem_m(curr_eta, p, f_curr, f_grad_curr, h_curr, g_curr))
+
+        print(f"quality_curr: {quality_curr}")
+        print(f"radius_curr: {radius}")
 
         if quality_curr < 0.25:
             radius *= 0.25
@@ -168,13 +202,13 @@ def riem_trust_region(
         if p_prev is not None:
             if cfg.criterion_mode == SubsolverCriterion.DISTANCE:
                 dist = mfld.dist(p_prev, p)
-                if dist <= cfg.criterion_eps
+                if dist <= cfg.criterion_eps:
                     return RiemTrustRegionResult(
                         success=True,
                         p=p,
                         iters=idx + 1,
                         history=RiemTrustRegionHistory(
-                            p_hist=torch.tensor(p_hist),
+                            p_hist=torch.stack(p_hist),
                             f_hist=torch.tensor(f_hist),
                             quality_hist=torch.tensor(quality_hist),
                             radius_hist=torch.tensor(radius_hist),
@@ -193,13 +227,12 @@ def riem_trust_region(
                         p=p,
                         iters=idx + 1,
                         history=RiemTrustRegionHistory(
-                            p_hist=torch.tensor(p_hist),
+                            p_hist=torch.stack(p_hist),
                             f_hist=torch.tensor(f_hist),
                             quality_hist=torch.tensor(quality_hist),
                             radius_hist=torch.tensor(radius_hist),
                         )
                     )
-
 
         p_prev = p.clone()
     return RiemTrustRegionResult(
@@ -207,7 +240,7 @@ def riem_trust_region(
         p=p,
         iters=cfg.max_iters,
         history=RiemTrustRegionHistory(
-            p_hist=torch.tensor(p_hist),
+            p_hist=torch.stack(p_hist),
             f_hist=torch.tensor(f_hist),
             quality_hist=torch.tensor(quality_hist),
             radius_hist=torch.tensor(radius_hist),

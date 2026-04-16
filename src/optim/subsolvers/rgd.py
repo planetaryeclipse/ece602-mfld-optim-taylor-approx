@@ -71,7 +71,7 @@ def riem_grad_descent(f: MfldFunc, p0: torch.Tensor, mfld: ComputeMfld, cfg: Rie
                         p=p,
                         iters=idx + 1,
                         history=RiemGradDescentHistory(
-                            p_hist=torch.tensor(p_hist),
+                            p_hist=torch.stack(p_hist),
                             f_hist=torch.tensor(f_hist),
                         ))
             elif cfg.criterion_mode == SubsolverCriterion.NORM:
@@ -87,7 +87,7 @@ def riem_grad_descent(f: MfldFunc, p0: torch.Tensor, mfld: ComputeMfld, cfg: Rie
                         p=p,
                         iters=idx + 1,
                         history=RiemGradDescentHistory(
-                            p_hist=torch.tensor(p_hist),
+                            p_hist=torch.stack(p_hist),
                             f_hist=torch.tensor(f_hist),
                         ))
 
@@ -97,6 +97,6 @@ def riem_grad_descent(f: MfldFunc, p0: torch.Tensor, mfld: ComputeMfld, cfg: Rie
         p=p,
         iters=cfg.max_iters,
         history=RiemGradDescentHistory(
-            p_hist=torch.tensor(p_hist),
+            p_hist=torch.stack(p_hist),
             f_hist=torch.tensor(f_hist),
         ))

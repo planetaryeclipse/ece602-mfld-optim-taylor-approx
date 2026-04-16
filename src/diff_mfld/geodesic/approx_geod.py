@@ -72,7 +72,7 @@ class ApproxLogMapWrapper:
         p_numpy = p.detach().numpy()
         q_numpy = q.detach().numpy()
 
-        print(f"len: {len(conn_coeffs_with_partials)}")
+        # print(f"len: {len(conn_coeffs_with_partials)}")
 
         v_numpy = self._log_map(p_numpy, q_numpy, alpha, *conn_coeffs_with_partials)
         return torch.tensor(v_numpy, dtype=p.dtype)

@@ -82,11 +82,11 @@ class RiemannSquaredDist(MfldFunc):
         # index of basis of diff is in the last dimension
         metric_partials = cfg.mfld.metric.partials(p)
 
-        term_1 = torch.tensordot(metric_partials, v, ([1], [0]))
-        term_2 = -g
-        term_3 = -torch.tensordot(
+        cov_hess = torch.tensordot(metric_partials, v, ([1], [0]))
+        cov_hess += -g
+        cov_hess += -torch.tensordot(
             torch.tensordot(g, v, ([1], [0])), conn_coeffs, ([0], [0])
         )
+        cov_hess *= -2.
 
-        cov_hess = -2 * (term_1 + term_2 + term_3)
         return cov_hess
