@@ -16,10 +16,14 @@ class TargetCost(MfldFunc):
         return self._target
 
     def value(self, p: torch.Tensor, cfg: ComputeMfld, *args: *FuncArgs) -> torch.Tensor:
-        return self._dist_func.value(p, cfg, self._target)
+        dist = self._dist_func.value(p, cfg, self._target)
+        # print(f"dist: {dist}")
+        return dist
 
     def diff(self, p: torch.Tensor, cfg: ComputeMfld, *args: *FuncArgs) -> torch.Tensor:
-        return self._dist_func.diff(p, cfg, self._target)
+        diff_dist = self._dist_func.diff(p, cfg, self._target)
+        # print(f"diff_dist: {diff_dist}")
+        return diff_dist
 
     def hess(self, p: torch.Tensor, cfg: ComputeMfld, *args: *FuncArgs) -> torch.Tensor:
         return self._dist_func.hess(p, cfg, self._target)
@@ -37,9 +41,17 @@ class ConstrainedRegion(MfldFunc):
     def value(self, p: torch.Tensor, cfg: ComputeMfld, *args: *FuncArgs) -> torch.Tensor:
         region_values = torch.zeros((len(self._regions)))
         for i, (center, radius) in enumerate(self._regions):
-            region_values[i] = self._dist_fn.value(p, cfg, center).item() - radius
+            # print(f"\tp: {p}")
+            # print(f"\tcenter: {center}")
 
-        return torch.max(region_values)
+            dist = self._dist_fn.value(p, cfg, center).item()
+            # print(f"\tdist: {dist}")
+
+            region_values[i] =  dist - radius**2
+
+        max_dist = torch.max(region_values)
+        # print(f"max_dist: {max_dist}")
+        return max_dist
 
     # noinspection DuplicatedCode
     def diff(self, p: torch.Tensor, cfg: ComputeMfld, *args: *FuncArgs) -> torch.Tensor:

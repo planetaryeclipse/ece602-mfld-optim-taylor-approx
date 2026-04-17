@@ -58,8 +58,9 @@ class RiemannSquaredDist(MfldFunc):
 
         g = cfg.mfld.metric(p)
         v = cfg.dist_method(p, q, cfg.mfld.conn)
+        dist_sqr = g(v, v)  # inner product of v with itself under metric g
 
-        return g(v, v) ** 2
+        return dist_sqr
 
     def diff(self, p: torch.Tensor, cfg: ComputeMfld, *args):
         q: torch.Tensor = args[0]

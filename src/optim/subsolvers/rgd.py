@@ -52,11 +52,15 @@ def riem_grad_descent(f: MfldFunc, p0: torch.Tensor, mfld: ComputeMfld, cfg: Rie
     p_hist = []
     f_hist = []
 
+    # print(f"(rgd) p0: {p0}")
+
     for idx in range(cfg.max_iters):
         df = f.diff(p, mfld, *args)  # cotangent space
         grad_f = mfld.mfld.metric(p).sharp(df)  # tangent space
 
         p = mfld.exp(p, -cfg.damp * grad_f)
+
+        # print(f"(rgd) p: {p}")
 
         # update the histories
         p_hist.append(p)
