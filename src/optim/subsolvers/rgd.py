@@ -14,7 +14,7 @@ from src.optim.results import CustomSubsolverResult, SubsolverHistory, Subsolver
 @dataclass
 class RiemGradDescentCfg(SubsolverCfg):
     damp: float = 0.6
-    criterion_mode: SubsolverCriterion = SubsolverCriterion.DISTANCE
+    criterion_mode: SubsolverCriterion = SubsolverCriterion.NORM
     criterion_eps: float = 0.01
     max_iters: int = 1000
 
@@ -81,6 +81,7 @@ def riem_grad_descent(f: MfldFunc, p0: torch.Tensor, mfld: ComputeMfld, cfg: Rie
                 f_grad = metric.sharp(f_diff)
                 f_grad_norm = metric(f_grad, f_grad)
 
+                # print(f"f_grad_norm: {f_grad_norm}, criterion: {cfg.criterion_eps}")
                 if f_grad_norm <= cfg.criterion_eps:
                     return RiemGradDescentResult(
                         success=True,
