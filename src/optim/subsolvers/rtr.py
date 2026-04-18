@@ -228,8 +228,6 @@ def riem_trust_region(
                 f_grad = metric.sharp(f_diff)
                 f_grad_norm = metric(f_grad, f_grad)
 
-                print(f"f_grad_norm: {f_grad_norm}")
-
                 if f_grad_norm <= cfg.criterion_eps:
                     return RiemTrustRegionResult(
                         success=True,
