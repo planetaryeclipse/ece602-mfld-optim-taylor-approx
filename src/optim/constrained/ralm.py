@@ -4,8 +4,8 @@ from copy import copy
 from dataclasses import dataclass, field
 from typing import Any, Callable, List, Tuple, Union, Optional
 
-from optim.methods import SubsolverCfg, SubsolverMethod
-from optim.results import CustomConstrSolverResult, ConstrSolverResult, ConstrSolverHistory, SubsolverCfg
+from optim.results import CustomConstrSolverResult, ConstrSolverResult, ConstrSolverHistory, SubsolverCfg, \
+    ConstrSolverCfg
 from optim.subsolvers.rgd import RiemGradDescentCfg
 from src.diff_mfld.geometry.funcs import MfldFunc, FuncArgs
 from src.diff_mfld.mfld import Mfld, ComputeMfld
@@ -15,7 +15,7 @@ from src.diff_mfld.mfld import Mfld, ComputeMfld
 # Riemannian Manifolds with Constraints"
 
 @dataclass
-class RalmCfg:
+class RalmCfg(ConstrSolverCfg):
     acc_tol_min: float = 1e-3
     acc_tol_0: float = 1e-2
     acc_decay: float = 0.9  # in (0, 1)

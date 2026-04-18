@@ -12,7 +12,7 @@ from diff_mfld.mfld import ComputeMfld
 from optim.results import SubsolverCfg, CustomSubsolverResult, SubsolverResult, SubsolverHistory, SubsolverCriterion
 
 REGION_RADIUS_EPS = 1E-6  # used to check equivalency of norm of eta updates
-
+QUALITY_EPS = 1E-6 # prevent quality from becoming nan or inf
 
 @dataclass
 class RiemTrustRegionCfg(SubsolverCfg):
@@ -26,7 +26,7 @@ class RiemTrustRegionCfg(SubsolverCfg):
     max_iters: int = 1000
     subproblem_max_iters = 100
     subproblem_rel_acc: float = 0.01  # 3 percent
-    subproblem_damp: float = 0.6
+    subproblem_damp: float = 0.4
 
 
 @dataclass
@@ -152,6 +152,8 @@ def riem_trust_region(
     p_prev = None  # track this value to utilize convergence criterion
     p: torch.Tensor = p0.detach().clone()  # cloned so can be modified without changing p_prev
 
+    # print(f"p0: {p}")
+
     radius = cfg.radius_start
 
     p_hist = []
@@ -168,22 +170,27 @@ def riem_trust_region(
         h_curr: torch.Tensor = cfg.symm_lin_oper(p)
         g_curr: torch.Tensor = metric.mat  # metric matrix
 
-        print()
+        # print(f"f_diff_curr: {f_diff_curr}, f_grad_curr: {f_grad_curr}")
+
+        # print()
 
         # approximately solve the trust-region subproblem
         curr_eta = solve_tr_subproblem_m(p, f_grad_curr, h_curr, g_curr, radius, cfg.subproblem_max_iters,
                                          cfg.subproblem_rel_acc, cfg.subproblem_damp)
-        print(f"curr_eta: {curr_eta}")
+        # print(f"curr_eta: {curr_eta}")
 
         p_possible_upd = mfld.exp(p, curr_eta)  # predicted next point under retraction
-        print(f"p_possible_upd: {p_possible_upd}")
+        # print(f"p_possible_upd: {p_possible_upd}")
 
-        quality_curr = (f.value(p, mfld, *args) - f.value(p_possible_upd, mfld, *args)) / (
-                tr_subproblem_m(torch.zeros_like(curr_eta), p, f_curr, f_grad_curr, h_curr,
-                                g_curr) - tr_subproblem_m(curr_eta, p, f_curr, f_grad_curr, h_curr, g_curr))
+        quality_num = f.value(p, mfld, *args) - f.value(p_possible_upd, mfld, *args)
+        quality_den = tr_subproblem_m(torch.zeros_like(curr_eta), p, f_curr, f_grad_curr, h_curr,
+                                g_curr) - tr_subproblem_m(curr_eta, p, f_curr, f_grad_curr, h_curr, g_curr)
+        quality_curr = quality_num / (quality_den + QUALITY_EPS)
 
-        print(f"quality_curr: {quality_curr}")
-        print(f"radius_curr: {radius}")
+        # print(f"quality_num: {quality_num}, quality_den: {quality_den}")
+
+        # print(f"quality_curr: {quality_curr}")
+        # print(f"radius_curr: {radius}")
 
         if quality_curr < 0.25:
             radius *= 0.25
@@ -220,6 +227,8 @@ def riem_trust_region(
                 metric = mfld.mfld.metric(p)
                 f_grad = metric.sharp(f_diff)
                 f_grad_norm = metric(f_grad, f_grad)
+
+                print(f"f_grad_norm: {f_grad_norm}")
 
                 if f_grad_norm <= cfg.criterion_eps:
                     return RiemTrustRegionResult(

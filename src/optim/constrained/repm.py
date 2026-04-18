@@ -7,8 +7,8 @@ import torch
 
 from diff_mfld.geometry.funcs import MfldFunc, FuncArgs
 from diff_mfld.mfld import ComputeMfld
-from optim.methods import SubsolverMethod
-from optim.results import SubsolverCfg, SubsolverCriterion
+from optim.constr_methods import SubsolverMethod
+from optim.results import SubsolverCfg, SubsolverCriterion, ConstrSolverCfg
 from optim.subsolvers.rgd import RiemGradDescentCfg
 
 
@@ -206,7 +206,7 @@ class RepmHistory:
 
 
 @dataclass
-class RepmCfg:
+class RepmCfg(ConstrSolverCfg):
     acc_tol_min: float = 1e-3  # epsilon
     acc_tol_0: float = 1e-2
     acc_decay: float = 0.9  # (0, 1)
@@ -221,6 +221,8 @@ class RepmCfg:
     approx_acc_decay: float = 0.9  # (0, 1)
 
     min_step: float = 0.02
+
+    mode: RepmMode = RepmMode.LSE
 
     subsolver_method: SubsolverMethod = SubsolverMethod.RIEM_GRAD_DESCENT
     subsolver_cfg: SubsolverCfg = field(
@@ -241,7 +243,6 @@ def repm(f: MfldFunc,
          gs: List[MfldFunc],
          hs: List[MfldFunc],
          p0: torch.Tensor,
-         mode: RepmMode,
          mfld: ComputeMfld,
          cfg: RepmCfg,
          *args: *FuncArgs) -> RepmResult:
@@ -264,9 +265,9 @@ def repm(f: MfldFunc,
 
     # sets up the correct subproblem
     q_subproblem = None
-    if mode == RepmMode.LSE:
+    if cfg.mode == RepmMode.LSE:
         q_subproblem = SubproblemLSE(f, gs, hs, approx_acc, penalty)
-    elif mode == RepmMode.LQH:
+    elif cfg.mode == RepmMode.LQH:
         q_subproblem = SubproblemLQH(f, gs, hs, approx_acc, penalty)
 
     successfully_converged = False

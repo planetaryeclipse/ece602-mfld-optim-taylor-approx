@@ -7,6 +7,7 @@ from torch import hub
 
 from diff_mfld.geometry.funcs import MfldFunc, FuncArgs
 from diff_mfld.mfld import ComputeMfld
+from optim.results import ConstrSolverCfg
 
 
 def _subproblem_grad(delta_x: np.ndarray, g_k: np.ndarray, b_k: np.ndarray, grad_f_k: np.ndarray):
@@ -166,7 +167,7 @@ class RsqoResult:
 
 
 @dataclass
-class RsqoCfg:
+class RsqoCfg(ConstrSolverCfg):
     beta: float = 0.4  # in (0, 1)
     gamma: float = 0.90  # in (0, 1)
     penalty_0: float = 1.2  # > 0
@@ -176,7 +177,7 @@ class RsqoCfg:
 
     subproblem_max_iters = 100
     subproblem_abs_acc: float = 0.01  # 3 percent
-    subproblem_damp: float = 0.6
+    subproblem_damp: float = 0.4
 
     min_step = 0.01
 
