@@ -23,7 +23,7 @@ from src.diff_mfld.geometry.connection import Connection
 LOG_MAP_INITIAL_MESH_SIZE = 10
 
 LOG_MAP_BVP_MAX_NODES = 500
-LOG_MAP_BVP_TOL = 1E-4
+LOG_MAP_BVP_TOL = 1E-2
 
 
 # exact methods

@@ -13,9 +13,9 @@ from src.optim.results import CustomSubsolverResult, SubsolverHistory, Subsolver
 
 @dataclass
 class RiemGradDescentCfg(SubsolverCfg):
-    damp: float = 0.4
-    criterion_mode: SubsolverCriterion = SubsolverCriterion.NORM
-    criterion_eps: float = 0.01
+    damp: float = 0.3
+    criterion_mode: SubsolverCriterion = SubsolverCriterion.DISTANCE
+    criterion_eps: float = 1e-3
     max_iters: int = 1000
 
 

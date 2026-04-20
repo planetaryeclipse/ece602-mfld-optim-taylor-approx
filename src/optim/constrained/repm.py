@@ -7,8 +7,8 @@ import torch
 
 from diff_mfld.geometry.funcs import MfldFunc, FuncArgs
 from diff_mfld.mfld import ComputeMfld
-from optim.constr_methods import SubsolverMethod
 from optim.results import SubsolverCfg, SubsolverCriterion, ConstrSolverCfg
+from optim.subsolver_methods import SubsolverMethod
 from optim.subsolvers.rgd import RiemGradDescentCfg
 
 
@@ -290,10 +290,10 @@ def repm(f: MfldFunc,
                 p=subsolver_result.p,
                 iters=idx + 1,
                 history=RepmHistory(
-                    p_hist=torch.stack(p_hist),
+                    p_hist=torch.stack(p_hist) if len(p_hist) > 0 else torch.zeros((0, len(p))),
                     f_hist=torch.tensor(f_hist),
-                    gs_hist=torch.stack(gs_hist),
-                    hs_hist=torch.stack(hs_hist),
+                    gs_hist=torch.stack(gs_hist) if len(gs_hist) > 0 else torch.zeros((0, len(gs))),
+                    hs_hist=torch.stack(hs_hist) if len(hs_hist) > 0 else torch.zeros((0, len(hs))),
                     acc_hist=torch.tensor(acc_hist),
                     penalty_hist=torch.tensor(penalty_hist),
                     approx_acc_hist=torch.tensor(approx_acc_hist),

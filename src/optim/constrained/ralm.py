@@ -6,6 +6,7 @@ from typing import Any, Callable, List, Tuple, Union, Optional
 
 from optim.results import CustomConstrSolverResult, ConstrSolverResult, ConstrSolverHistory, SubsolverCfg, \
     ConstrSolverCfg
+from optim.subsolver_methods import SubsolverMethod
 from optim.subsolvers.rgd import RiemGradDescentCfg
 from src.diff_mfld.geometry.funcs import MfldFunc, FuncArgs
 from src.diff_mfld.mfld import Mfld, ComputeMfld
