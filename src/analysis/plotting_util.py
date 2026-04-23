@@ -30,6 +30,7 @@ _method_styles = {
 _max_success_lim = 21
 
 _cost_target = np.array([-0.3477236, -0.06954472, 0.20863416])
+_constraint_target = np.array([-0.13908944,  0.20863416,  0.06954472])
 
 
 def gen_success_vs_scaling_plots(data: List[ParamData], alg: str, metric: str, scaling_to_show: List[float],
@@ -121,6 +122,7 @@ def gen_euclid_nonoptimal_norms_vs_scaling_plots(data: List[ParamData], alg: str
                                                  scaling_to_show: List[float],
                                                  methods_to_show: List[str], show_titles=True,
                                                  method_styles=_method_styles,
+                                                 target=_cost_target,
                                                  use_log=False):
     alg_and_metric_data = list(filter(lambda param_data: param_data.alg == alg and param_data.metric == metric, data))
 
@@ -137,7 +139,7 @@ def gen_euclid_nonoptimal_norms_vs_scaling_plots(data: List[ParamData], alg: str
             euclid_dist_norms = []
             for trial in trials:
                 if trial.success:
-                    euclid_dist_norm = np.linalg.norm(scaling * _cost_target - np.array(trial.p))
+                    euclid_dist_norm = np.linalg.norm(scaling * target - np.array(trial.p))
                     euclid_dist_norms.append(euclid_dist_norm)
 
             if len(euclid_dist_norms) == 0:
@@ -181,6 +183,7 @@ def gen_euclid_nonoptimal_norms_plots(data: List[ParamData], alg: str, metric: s
                                       scaling: float,
                                       methods_to_show: List[str], show_titles=True,
                                       method_styles=_method_styles,
+                                      target=_cost_target,
                                       use_log=False):
     methods_data = list(filter(
         lambda param_data: param_data.alg == alg and param_data.metric == metric and param_data.scaling == scaling,
@@ -204,7 +207,7 @@ def gen_euclid_nonoptimal_norms_plots(data: List[ParamData], alg: str, metric: s
             for j in range(max_iter_len_for_method):
                 # if this iteration terminated earlier then we just keep the final point
                 curr_dist_norm = np.linalg.norm(
-                    scaling * _cost_target - np.array(p_hist[j, :])) if j < len_trial else curr_dist_norm
+                    scaling * target - np.array(p_hist[j, :])) if j < len_trial else curr_dist_norm
                 euclid_dist_norms[i, j] = curr_dist_norm
 
         mean_euclid_dist_norm = np.mean(euclid_dist_norms, axis=0)
