@@ -49,7 +49,7 @@ def _solve_subproblem(x_k: torch.Tensor, g_k: torch.Tensor, b_k: torch.Tensor, g
         delta_x = delta_x_upd
 
     # finds the active inequality constraints
-    active_ineqs = [i for i, (gi, grad_gi) in enumerate(zip(gs_k, grad_gs_k)) if gi + grad_gi @ g_k @ delta_x < 0]
+    active_ineqs = [i for i, (gi, grad_gi) in enumerate(zip(gs_k, grad_gs_k)) if gi + grad_gi @ g_k @ delta_x >= 0.]
 
     sub_f_grad = _subproblem_grad(delta_x, g_k, b_k, grad_f_k)
     active_sub_gs_grads = [grad_gs_k[i] @ g_k for i in active_ineqs]
@@ -168,18 +168,18 @@ class RsqoResult:
 
 @dataclass
 class RsqoCfg(ConstrSolverCfg):
-    beta: float = 0.4  # in (0, 1)
-    gamma: float = 0.90  # in (0, 1)
-    penalty_0: float = 1.2  # > 0
-    eps: float = 0.1  # > 0
+    beta: float = 0.85  # in (0, 1)  # o3 was like 44 seconds with 0.6 and 0.6
+    gamma: float = 0.9  # in (0, 1)
+    penalty_0: float = 0.05  # > 0
+    eps: float = 0.05  # > 0  increase in penalty
     symm_lin_oper: Callable[[torch.Tensor], torch.Tensor] = field(default=lambda p: 1.*torch.eye(p.shape[0]))
     max_iters: int = 1000
 
-    subproblem_max_iters = 100
-    subproblem_abs_acc: float = 0.01  # 3 percent
-    subproblem_damp: float = 0.4
+    subproblem_max_iters = 1000
+    subproblem_abs_acc: float = 1e-5  # 3 percent
+    subproblem_damp: float = 0.3
 
-    min_step = 0.01
+    min_step = 1e-4
 
 
 def rsqo(

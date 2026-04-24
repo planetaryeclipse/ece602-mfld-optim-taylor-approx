@@ -17,16 +17,16 @@ QUALITY_EPS = 1E-6 # prevent quality from becoming nan or inf
 @dataclass
 class RiemTrustRegionCfg(SubsolverCfg):
     radius_max: float = 1.0
-    radius_start: float = 0.1  # in (0, radius_max)
-    min_quality_for_step: float = 0.15  # in [0, 1/4)
+    radius_start: float = 0.5  # in (0, radius_max)
+    min_quality_for_step: float = 0.225  # in [0, 1/4)
     symm_lin_oper: Callable[[torch.Tensor], torch.Tensor] = field(default=lambda p: torch.eye(p.shape[0]))
     # damp: float = 0.1  # damping on the trust region causes convergence failure
     criterion_mode: SubsolverCriterion = SubsolverCriterion.DISTANCE
-    criterion_eps: float = 1e-3
+    criterion_eps: float = 1e-4
     max_iters: int = 1000
     subproblem_max_iters = 100
-    subproblem_rel_acc: float = 0.01  # 3 percent
-    subproblem_damp: float = 0.3
+    subproblem_rel_acc: float = 1e-4  # 3 percent
+    subproblem_damp: float = 0.1
 
 
 @dataclass

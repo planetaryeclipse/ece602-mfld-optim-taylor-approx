@@ -17,12 +17,12 @@ from src.diff_mfld.mfld import Mfld, ComputeMfld
 
 @dataclass
 class RalmCfg(ConstrSolverCfg):
-    acc_tol_min: float = 1e-3
-    acc_tol_0: float = 1e-2
-    acc_decay: float = 0.9  # in (0, 1)
+    acc_tol_min: float = 1e-5
+    acc_tol_0: float = 1e-1
+    acc_decay: float = 0.80  # in (0, 1)
 
-    penalty_0: float = 0.01
-    penalty_growth: float = 1.02  # > 1
+    penalty_0: float = 0.05
+    penalty_growth: float = 1.1  # > 1
 
     g_mult_0: float = 0.
     g_mult_min: float = 0.
@@ -33,7 +33,7 @@ class RalmCfg(ConstrSolverCfg):
     h_mult_max: float = 1000.
 
     ratio: float = 0.5  # in (0, 1)
-    min_step: float = 0.02
+    min_step: float = 1e-4
 
     subsolver_method: SubsolverMethod = SubsolverMethod.RIEM_GRAD_DESCENT
     subsolver_cfg: SubsolverCfg = field(

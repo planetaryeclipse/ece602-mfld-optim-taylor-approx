@@ -162,7 +162,7 @@ class SubproblemLQH(MfldFunc):
             h_val = h.value(p, cfg, *args)
             h_diff = h.diff(p, cfg, *args)
 
-            result += -self._penalty / torch.float_power(h_val ** 2 + self._u ** 2, 1.5 / 2) * h_val ** 2 * torch.outer(
+            result += -self._penalty / torch.float_power(h_val ** 2 + self._u ** 2, 1.5 / 2.) * h_val ** 2 * torch.outer(
                 h_diff, h_diff)
             result += self._penalty / (h_val ** 2 + self._u ** 2) * torch.outer(h_diff, h_diff)
             result += self._penalty / (h_val ** 2 + self._u ** 2) * h.hess(p, cfg, *args)
@@ -207,20 +207,20 @@ class RepmHistory:
 
 @dataclass
 class RepmCfg(ConstrSolverCfg):
-    acc_tol_min: float = 1e-3  # epsilon
-    acc_tol_0: float = 1e-2
-    acc_decay: float = 0.9  # (0, 1)
+    acc_tol_min: float = 1e-5  # epsilon
+    acc_tol_0: float = 1e-1
+    acc_decay: float = 0.90  # (0, 1)
 
-    penalty_0: float = 0.5  # rho
+    penalty_0: float = 0.05  # rho
     penalty_growth: float = 1.1  # > 1
     penalty_update: bool = True  # whether to update the penalty
     penalty_constr_threshold: float = 1e-6  # update if contraint violates this threshold
 
-    approx_acc_min: float = 1e-3
-    approx_acc_0: float = 1e-2  # u
-    approx_acc_decay: float = 0.9  # (0, 1)
+    approx_acc_min: float = 1e-1
+    approx_acc_0: float = 0.4  # u
+    approx_acc_decay: float = 0.90  # (0, 1)
 
-    min_step: float = 0.02
+    min_step: float = 1e-4
 
     mode: RepmMode = RepmMode.LSE
 
