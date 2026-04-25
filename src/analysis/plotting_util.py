@@ -1,7 +1,9 @@
+from pathlib import Path
+
 import numpy as np
 import matplotlib.pyplot as plt
 
-from typing import List
+from typing import List, Optional
 
 from analysis.util import ParamData
 
@@ -30,11 +32,12 @@ _method_styles = {
 _max_success_lim = 21
 
 _cost_target = np.array([-0.3477236, -0.06954472, 0.20863416])
-_constraint_target = np.array([-0.13908944,  0.20863416,  0.06954472])
+_constraint_target = np.array([-0.13908944, 0.20863416, 0.06954472])
 
 
 def gen_success_vs_scaling_plots(data: List[ParamData], alg: str, metric: str, scaling_to_show: List[float],
-                                 methods_to_show: List[str], show_titles=True, method_styles=_method_styles):
+                                 methods_to_show: List[str], show_titles=True, method_styles=_method_styles,
+                                 save_dir: Optional[Path] = None):
     alg_and_metric_data = list(filter(lambda param_data: param_data.alg == alg and param_data.metric == metric, data))
 
     fig, ax = plt.subplots()
@@ -61,12 +64,18 @@ def gen_success_vs_scaling_plots(data: List[ParamData], alg: str, metric: str, s
 
     ax.set_xlabel("Scaling")
     ax.set_ylabel("Successes")
-    ax.set_ylim(0, _max_success_lim)
+    # ax.set_ylim(0, _max_success_lim)
+    ax.set_xticks(scaling_to_show)
+    ax.grid()
     ax.legend()
+
+    if save_dir is not None:
+        fig.savefig(save_dir / f"success_vs_scaling_{alg}_{metric}.png", dpi=300, bbox_inches='tight')
 
 
 def gen_iters_vs_scaling_plots(data: List[ParamData], alg: str, metric: str, scaling_to_show: List[float],
-                               methods_to_show: List[str], show_titles=True, method_styles=_method_styles):
+                               methods_to_show: List[str], show_titles=True, method_styles=_method_styles,
+                               save_dir: Optional[Path] = None):
     alg_and_metric_data = list(filter(lambda param_data: param_data.alg == alg and param_data.metric == metric, data))
 
     fig, ax = plt.subplots()
@@ -114,8 +123,13 @@ def gen_iters_vs_scaling_plots(data: List[ParamData], alg: str, metric: str, sca
 
     ax.set_xlabel("Scaling")
     ax.set_ylabel("Iterations")
-    ax.set_ylim(0, overall_max_iters + 1)
+    # ax.set_ylim(0, overall_max_iters + 1)
+    ax.set_xticks(scaling_to_show)
+    ax.grid()
     ax.legend()
+
+    if save_dir is not None:
+        fig.savefig(save_dir / f"iters_vs_scaling_{alg}_{metric}.png", dpi=300, bbox_inches='tight')
 
 
 def gen_euclid_nonoptimal_norms_vs_scaling_plots(data: List[ParamData], alg: str, metric: str,
@@ -123,7 +137,8 @@ def gen_euclid_nonoptimal_norms_vs_scaling_plots(data: List[ParamData], alg: str
                                                  methods_to_show: List[str], show_titles=True,
                                                  method_styles=_method_styles,
                                                  target=_cost_target,
-                                                 use_log=False):
+                                                 use_log=False,
+                                                 save_dir: Optional[Path] = None):
     alg_and_metric_data = list(filter(lambda param_data: param_data.alg == alg and param_data.metric == metric, data))
 
     fig, ax = plt.subplots()
@@ -176,7 +191,12 @@ def gen_euclid_nonoptimal_norms_vs_scaling_plots(data: List[ParamData], alg: str
     ax.set_xlabel("Scaling")
     ax.set_ylabel("Euclid Distance Norm")
     # ax.set_ylim(0, _max_success_lim)
+    ax.set_xticks(scaling_to_show)
+    ax.grid()
     ax.legend()
+
+    if save_dir is not None:
+        fig.savefig(save_dir / f"dist_norm_vs_scaling_{alg}_{metric}.png", dpi=300, bbox_inches='tight')
 
 
 def gen_euclid_nonoptimal_norms_plots(data: List[ParamData], alg: str, metric: str,
@@ -184,7 +204,8 @@ def gen_euclid_nonoptimal_norms_plots(data: List[ParamData], alg: str, metric: s
                                       methods_to_show: List[str], show_titles=True,
                                       method_styles=_method_styles,
                                       target=_cost_target,
-                                      use_log=False):
+                                      use_log=False,
+                                      save_dir: Optional[Path] = None):
     methods_data = list(filter(
         lambda param_data: param_data.alg == alg and param_data.metric == metric and param_data.scaling == scaling,
         data))
@@ -240,7 +261,11 @@ def gen_euclid_nonoptimal_norms_plots(data: List[ParamData], alg: str, metric: s
     ax.set_xlabel("Iterations")
     ax.set_ylabel("Euclid Distance Norm")
     # ax.set_ylim(0, _max_success_lim)
+    ax.grid()
     ax.legend()
+
+    if save_dir is not None:
+        fig.savefig(save_dir / f"dist_norm_vs_iters_{alg}_{metric}_scaling_{scaling}.png", dpi=300, bbox_inches='tight')
 
 
 # plotting methods exclusive to the constrained solver
@@ -249,7 +274,8 @@ def gen_subsolver_iters_plots(data: List[ParamData], alg: str, metric: str,
                               scaling: float,
                               methods_to_show: List[str], show_titles=True,
                               method_styles=_method_styles,
-                              use_log=False):
+                              use_log=False,
+                              save_dir: Optional[Path] = None):
     methods_data = list(filter(
         lambda param_data: param_data.alg == alg and param_data.metric == metric and param_data.scaling == scaling,
         data))
@@ -303,4 +329,9 @@ def gen_subsolver_iters_plots(data: List[ParamData], alg: str, metric: str,
     ax.set_xlabel("Iterations")
     ax.set_ylabel("Subsolver Iterations")
     ax.set_ylim(0, overall_max_subsolver_iters + 1)
+    ax.grid()
     ax.legend()
+
+    if save_dir is not None:
+        fig.savefig(save_dir / f"subsolver_iters_vs_scaling_{alg}_{metric}.png", dpi=300, bbox_inches='tight')
+
