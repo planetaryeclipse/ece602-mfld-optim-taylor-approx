@@ -168,8 +168,8 @@ class RsqoResult:
 
 @dataclass
 class RsqoCfg(ConstrSolverCfg):
-    beta: float = 0.85  # in (0, 1)  # o3 was like 44 seconds with 0.6 and 0.6
-    gamma: float = 0.9  # in (0, 1)
+    beta: float = 0.975  # in (0, 1)  # o3 was like 44 seconds with 0.6 and 0.6
+    gamma: float = 0.95  # in (0, 1)
     penalty_0: float = 0.05  # > 0
     eps: float = 0.05  # > 0  increase in penalty
     symm_lin_oper: Callable[[torch.Tensor], torch.Tensor] = field(default=lambda p: 1.*torch.eye(p.shape[0]))
