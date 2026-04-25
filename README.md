@@ -4,6 +4,8 @@ This is the repository containing all accompanying code to the project report ti
 
 Note that this repo is intended to be run from PyCharm and is configured with an `.idea` subdirectory You can likely run all the scripts/notbooks in this repository without much issue otherwise but you will need to ensure that you have added `.src` to your `PYTHONPATH` due to the presence of custom libraries needed for manifold optimization.
 
+> Note that if you intend to run any of the analysis files, please delete the `data` directory then unzip the contents of the `data.zip` file. There is a `data` drectory inside this zip that contains all the data from the training runs needed to run the analysis files.
+
 This project is structured according to the following:
 - `data` contains the various subdirectories used to store the results obtained from running each test optimization process
 - `derivations` contains a notebook that can be utilized to generate higher-order Taylor series terms of a geodesic vector field. These are the $f^{(k)}$ values using the notation provided in the report.
